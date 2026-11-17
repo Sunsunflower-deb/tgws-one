@@ -18,3 +18,7 @@ logs/
 *.log
 TgwsOne.ini
 TgWsProxy_data/
+
+# приватный ключ подписи — только локально
+*.pfx
+signing/PASSWORD.txt
