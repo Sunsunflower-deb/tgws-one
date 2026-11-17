@@ -72,10 +72,46 @@ namespace TgwsOne
 
         // Куда пишем ini / списки / логи: папка установки, если она доступна на запись,
         // иначе %LOCALAPPDATA%\TgwsOne (обычный случай для Program Files).
+        // Общесистемная папка: используется процессом под SYSTEM (задача «для всех пользователей»)
+        // и при установке общесистемного обхода DPI.
+        public static string MachineRoot
+        {
+            get
+            {
+                string custom = Environment.GetEnvironmentVariable("TGWS_MACHINE_ROOT");
+                if (!string.IsNullOrEmpty(custom)) return custom;
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "TgwsOne");
+            }
+        }
+
+        public static bool IsSystemUser
+        {
+            get
+            {
+                try
+                {
+                    return System.Security.Principal.WindowsIdentity.GetCurrent().User.Value == "S-1-5-18";
+                }
+                catch { return false; }
+            }
+        }
+
+        public static bool MachineMode
+        {
+            get
+            {
+                if (IsSystemUser) return true;
+                return Environment.GetEnvironmentVariable("TGWS_MACHINE") == "1";
+            }
+        }
+
         public static string DataRoot
         {
             get
             {
+                if (MachineMode) return MachineRoot;
                 if (AppDirWritable) return AppDir;
                 return Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -149,14 +185,21 @@ namespace TgwsOne
     {
         private readonly Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> order = new List<string>();
+        private readonly string iniPath;
+
+        public Settings() { }
+
+        public Settings(string path) { iniPath = path; }
+
+        public string IniPath { get { return iniPath ?? P.Ini; } }
 
         public void Load()
         {
-            try { Directory.CreateDirectory(Path.GetDirectoryName(P.Ini)); } catch { }
-            if (!File.Exists(P.Ini)) { Defaults(); Save(); return; }
+            try { Directory.CreateDirectory(Path.GetDirectoryName(IniPath)); } catch { }
+            if (!File.Exists(IniPath)) { Defaults(); Save(); return; }
 
             string section = "app";
-            foreach (string raw in File.ReadAllLines(P.Ini, Encoding.UTF8))
+            foreach (string raw in File.ReadAllLines(IniPath, Encoding.UTF8))
             {
                 string line = raw.Trim();
                 if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
@@ -211,8 +254,8 @@ namespace TgwsOne
             }
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(P.Ini));
-                File.WriteAllText(P.Ini, string.Join("\r\n", lines.ToArray()) + "\r\n", new UTF8Encoding(false));
+                Directory.CreateDirectory(Path.GetDirectoryName(IniPath));
+                File.WriteAllText(IniPath, string.Join("\r\n", lines.ToArray()) + "\r\n", new UTF8Encoding(false));
             }
             catch (Exception ex) { Log.Write("не удалось сохранить настройки: " + ex.Message); }
         }
@@ -916,22 +959,38 @@ telesco.pe
         // Задача описывается XML — так не надо экранировать кавычки в путях с пробелами.
         public static string BuildTaskXml()
         {
+            return BuildTaskXml(false);
+        }
+
+        public static string BuildTaskXml(bool allUsers)
+        {
             string user = Environment.UserDomainName + "\\" + Environment.UserName;
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-16\"?>");
             sb.AppendLine("<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">");
             sb.AppendLine("  <RegistrationInfo>");
-            sb.AppendLine("    <Description>TG WS Proxy: обход DPI (zapret) при входе в систему</Description>");
+            sb.AppendLine("    <Description>TG WS Proxy: обход DPI (zapret) " +
+                (allUsers ? "для всех пользователей" : "при входе в систему") + "</Description>");
             sb.AppendLine("  </RegistrationInfo>");
             sb.AppendLine("  <Triggers>");
-            sb.AppendLine("    <LogonTrigger>");
-            sb.AppendLine("      <Enabled>true</Enabled>");
-            sb.AppendLine("    </LogonTrigger>");
+            if (allUsers)
+            {
+                sb.AppendLine("    <BootTrigger>");
+                sb.AppendLine("      <Enabled>true</Enabled>");
+                sb.AppendLine("      <Delay>PT30S</Delay>");
+                sb.AppendLine("    </BootTrigger>");
+            }
+            else
+            {
+                sb.AppendLine("    <LogonTrigger>");
+                sb.AppendLine("      <Enabled>true</Enabled>");
+                sb.AppendLine("    </LogonTrigger>");
+            }
             sb.AppendLine("  </Triggers>");
             sb.AppendLine("  <Principals>");
             sb.AppendLine("    <Principal id=\"Author\">");
-            sb.AppendLine("      <UserId>" + X(user) + "</UserId>");
-            sb.AppendLine("      <LogonType>InteractiveToken</LogonType>");
+            sb.AppendLine("      <UserId>" + (allUsers ? "S-1-5-18" : X(user)) + "</UserId>");
+            sb.AppendLine("      <LogonType>" + (allUsers ? "ServiceAccount" : "InteractiveToken") + "</LogonType>");
             sb.AppendLine("      <RunLevel>HighestAvailable</RunLevel>");
             sb.AppendLine("    </Principal>");
             sb.AppendLine("  </Principals>");
@@ -993,6 +1052,136 @@ telesco.pe
             Run("schtasks.exe", "/end /tn \"" + TaskName + "\"", true);
             int code = Run("schtasks.exe", "/delete /f /tn \"" + TaskName + "\"", true);
             return code == 0;
+        }
+
+        // ---------------- режим «для всех пользователей» ----------------
+
+        public const string MachineFlag = "all-users.flag";
+
+        public string MachineIni { get { return Path.Combine(P.MachineRoot, "TgwsOne.ini"); } }
+
+        public bool MachineInstalled
+        {
+            get
+            {
+                try { return File.Exists(Path.Combine(P.MachineRoot, MachineFlag)); }
+                catch { return false; }
+            }
+        }
+
+        public static bool IsAdmin()
+        {
+            try
+            {
+                System.Security.Principal.WindowsIdentity id = System.Security.Principal.WindowsIdentity.GetCurrent();
+                return new System.Security.Principal.WindowsPrincipal(id)
+                    .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            }
+            catch { return false; }
+        }
+
+        // Списки и настройки кладём в ProgramData, задачу создаём от SYSTEM при старте системы.
+        public bool EnsureMachineTask()
+        {
+            try
+            {
+                Directory.CreateDirectory(P.MachineRoot);
+                string machineLists = Path.Combine(P.MachineRoot, "lists");
+                Directory.CreateDirectory(machineLists);
+
+                foreach (string name in new string[] { "cloudflare-ips.txt", "telegram.txt", "exclude-hosts.txt", "exclude-ips.txt" })
+                {
+                    string dst = Path.Combine(machineLists, name);
+                    if (File.Exists(dst)) continue;
+                    try
+                    {
+                        // при установке списков пользователя ещё нет — берём из папки установки
+                        string fromInstall = Path.Combine(Path.Combine(P.AppDir, "lists"), name);
+                        string fromUser = Path.Combine(P.ListsDir, name);
+                        string src = File.Exists(fromInstall) ? fromInstall : fromUser;
+                        if (File.Exists(src)) File.Copy(src, dst, false);
+                    }
+                    catch { }
+                }
+
+                if (!File.Exists(MachineIni))
+                {
+                    string text = "[zapret]" + "\r\n" +
+                                  "strategy=" + Strategy + "\r\n" +
+                                  "tcpports=" + cfg.GetStr("zapret", "tcpports", "443") + "\r\n";
+                    File.WriteAllText(MachineIni, text, new UTF8Encoding(false));
+                }
+
+                File.WriteAllText(Path.Combine(P.MachineRoot, MachineFlag), "1", new UTF8Encoding(false));
+
+                RemoveTask(); // старая задача «только для этого пользователя» больше не нужна
+
+                string xmlPath = Path.Combine(P.MachineRoot, "task.xml");
+                File.WriteAllText(xmlPath, BuildTaskXml(true), Encoding.Unicode);
+                int code = Run("schtasks.exe", "/create /f /tn \"" + TaskName + "\" /xml \"" + xmlPath + "\"", true);
+                try { File.Delete(xmlPath); } catch { }
+                if (code != 0)
+                {
+                    Log.Write("zapret(все пользователи): задача не создана, код " + code);
+                    return false;
+                }
+
+                Run("schtasks.exe", "/run /tn \"" + TaskName + "\"", true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("zapret(все пользователи): " + ex.Message);
+                return false;
+            }
+        }
+
+        public bool RemoveMachineTask()
+        {
+            Run("schtasks.exe", "/end /tn \"" + TaskName + "\"", true);
+            Run("schtasks.exe", "/delete /f /tn \"" + TaskName + "\"", true);
+            try { File.Delete(Path.Combine(P.MachineRoot, MachineFlag)); } catch { }
+            return true;
+        }
+
+        public void SetMachineEnabled(bool enable)
+        {
+            if (enable)
+            {
+                Run("schtasks.exe", "/run /tn \"" + TaskName + "\"", true);
+                return;
+            }
+            Run("schtasks.exe", "/end /tn \"" + TaskName + "\"", true);
+            foreach (Process p in Proxy.SafeProcesses("winws"))
+            {
+                try { p.Kill(); } catch { }
+            }
+        }
+
+        // Смена стратегии в общесистемной конфигурации (нужны права администратора).
+        public bool CycleMachineStrategy()
+        {
+            try
+            {
+                Settings machine = new Settings(MachineIni);
+                machine.Load();
+                string[] order = new string[] { "fake-tls", "split", "split-stealth", "aggressive" };
+                string current = machine.GetStr("zapret", "strategy", "fake-tls");
+                int index = Array.IndexOf(order, current);
+                string next = order[(index + 1) % order.Length];
+                machine.Set("zapret", "strategy", next);
+                machine.Save();
+                Log.Write("стратегия для всех пользователей: " + current + " -> " + next);
+                SetMachineEnabled(false);
+                System.Threading.Thread.Sleep(500);
+                SetMachineEnabled(true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("смена стратегии (все пользователи): " + ex.Message);
+                return false;
+            }
         }
 
         public bool Install()
@@ -1901,7 +2090,13 @@ telesco.pe
                 + "  ·  H2: " + (cfg.GetBool("proxy", "h2", true) ? "вкл" : "выкл");
 
             bool zapretOn = zapret.WinwsRunning;
-            if (!zapret.BundleFound) lblZapretState.Text = "обход DPI: папка zapret\\bin не найдена";
+            if (zapret.MachineInstalled)
+            {
+                lblZapretState.Text = zapretOn
+                    ? "обход DPI: работает для всех пользователей (" + zapret.Strategy + ")"
+                    : "обход DPI: включён для всех, сейчас остановлен";
+            }
+            else if (!zapret.BundleFound) lblZapretState.Text = "обход DPI: папка zapret\\bin не найдена";
             else if (!zapret.TaskInstalled) lblZapretState.Text = "обход DPI: не установлен";
             else if (zapretOn) lblZapretState.Text = "обход DPI: работает (" + zapret.Strategy + ")";
             else lblZapretState.Text = "обход DPI: установлен, выключен";
@@ -1955,6 +2150,14 @@ telesco.pe
 
         private void CycleStrategy()
         {
+            if (zapret.MachineInstalled)
+            {
+                if (Zapret.IsAdmin()) zapret.CycleMachineStrategy();
+                else Zapret.RunElevated("--zapret-all-cycle");
+                RefreshState();
+                return;
+            }
+
             string current = zapret.Strategy;
             int idx = Array.IndexOf(Strategies, current);
             string next = Strategies[(idx + 1) % Strategies.Length];
@@ -1971,6 +2174,14 @@ telesco.pe
 
         private void ToggleZapret(bool enable)
         {
+            if (zapret.MachineInstalled)
+            {
+                if (Zapret.IsAdmin()) zapret.SetMachineEnabled(enable);
+                else Zapret.RunElevated(enable ? "--zapret-all-on" : "--zapret-all-off");
+                RefreshState();
+                return;
+            }
+
             if (enable)
             {
                 if (!zapret.BundleFound)
@@ -2220,6 +2431,14 @@ telesco.pe
                 }
                 return 0;
             }
+            if (mode == "--task-xml-all")
+            {
+                Directory.CreateDirectory(P.LogsDir);
+                string pathAll = Path.Combine(P.LogsDir, "task-all.xml");
+                File.WriteAllText(pathAll, Zapret.BuildTaskXml(true), Encoding.Unicode);
+                Say(pathAll);
+                return 0;
+            }
             if (mode == "--task-xml")
             {
                 string path = Path.Combine(P.LogsDir, "task-check.xml");
@@ -2229,6 +2448,34 @@ telesco.pe
                 return 0;
             }
             if (mode == "--ensure-zapret-task") return Zapret.EnsureTask() ? 0 : 1;
+            if (mode == "--install-zapret-all")
+            {
+                Settings sa = new Settings(); sa.Load();
+                return new Zapret(sa).EnsureMachineTask() ? 0 : 1;
+            }
+            if (mode == "--remove-zapret-all")
+            {
+                Settings sr = new Settings(); sr.Load();
+                new Zapret(sr).RemoveMachineTask();
+                return 0;
+            }
+            if (mode == "--zapret-all-on")
+            {
+                Settings son = new Settings(); son.Load();
+                new Zapret(son).SetMachineEnabled(true);
+                return 0;
+            }
+            if (mode == "--zapret-all-off")
+            {
+                Settings soff = new Settings(); soff.Load();
+                new Zapret(soff).SetMachineEnabled(false);
+                return 0;
+            }
+            if (mode == "--zapret-all-cycle")
+            {
+                Settings scy = new Settings(); scy.Load();
+                return new Zapret(scy).CycleMachineStrategy() ? 0 : 1;
+            }
             if (mode == "--remove-zapret-task") return Zapret.RemoveTask() ? 0 : 1;
             if (mode == "--start" || mode == "--stop" || mode == "--status")
             {

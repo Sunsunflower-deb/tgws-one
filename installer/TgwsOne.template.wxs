@@ -8,6 +8,9 @@
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
+    <Launch Condition="VersionNT64" Message="TgwsOne requires 64-bit Windows." />
+    <Launch Condition="VersionNT &gt;= 1000" Message="TgwsOne requires Windows 10 or later." />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="TgwsOne">
         <Directory Id="DIR_LISTS" Name="lists" />
@@ -47,9 +50,9 @@
     <Icon Id="AppIcon" SourceFile="$(var.StageDir)\app.ico" />
 
     <CustomAction Id="EnsureZapretTask" Directory="INSTALLDIR" Execute="immediate" Return="ignore"
-                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --ensure-zapret-task" />
+                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --install-zapret-all" />
     <CustomAction Id="RemoveZapretTask" Directory="INSTALLDIR" Execute="immediate" Return="ignore"
-                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --remove-zapret-task" />
+                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --remove-zapret-all" />
 
     <InstallExecuteSequence>
       <Custom Action="EnsureZapretTask" After="InstallFiles" Condition="NOT Installed" />
