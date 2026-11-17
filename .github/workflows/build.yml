@@ -47,11 +47,24 @@ jobs:
         shell: pwsh
         env:
           DOTNET_ROLL_FORWARD: LatestMajor
+          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
         run: |
           $v = "${{ github.ref_name }}"
           if ($v -match '^v\d') { $v = $v.Substring(1) } else { $v = "1.0.3.0" }
           if (($v -split '\.').Count -lt 4) { $v = "$v.0" }
-          ./build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin $env:ZAPRET_BIN -Version $v
+
+          $signArgs = @()
+          if ($env:SIGN_PFX_BASE64) {
+            $pfx = Join-Path $env:RUNNER_TEMP "sign.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
+            $signArgs = @("-Pfx", $pfx, "-PfxPassword", $env:SIGN_PFX_PASSWORD)
+            Write-Host "подпись включена (SIGN_PFX_BASE64 задан)"
+          } else {
+            Write-Host "подпись не настроена: сборка без подписи"
+          }
+
+          ./build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin $env:ZAPRET_BIN -Version $v @signArgs
 
       - uses: actions/upload-artifact@v4
         with:

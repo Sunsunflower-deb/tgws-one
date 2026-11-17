@@ -97,6 +97,10 @@ build.ps1                   сборка exe + MSI
 .github/workflows/build.yml CI: сборка MSI и релиз по тегу
 ```
 
+## Подпись
+
+Сборка умеет подписывать exe и MSI: см. [SIGNING.md](SIGNING.md) (сертификаты, CI-секреты, самоподписанный вариант).
+
 ## Ограничения
 
 - Только Windows 10/11 x64.

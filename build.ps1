@@ -14,7 +14,13 @@ param(
     [Parameter(Mandatory = $true)][string]$Engine,
     [Parameter(Mandatory = $true)][string]$ZapretBin,
     [string]$Version = "1.0.3.0",
-    [string]$Out
+    [string]$Out,
+
+    # Подпись (необязательно): PFX-файл или отпечаток сертификата в хранилище/на токене.
+    [string]$Pfx = $env:TGWS_SIGN_PFX,
+    [string]$PfxPassword = $env:TGWS_SIGN_PFX_PASSWORD,
+    [string]$Thumbprint = $env:TGWS_SIGN_THUMBPRINT,
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,6 +30,54 @@ $stage = Join-Path $build "stage"
 
 $verShort = (($Version -split '\.') | Select-Object -First 3) -join '.'
 if (-not $Out) { $Out = Join-Path $root ("dist\TgwsOne-" + $verShort + ".msi") }
+
+# ---------- подпись ----------
+function Find-SignTool
+{
+    $roots = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"),
+        (Join-Path $env:ProgramFiles "Windows Kits\10\bin")
+    )
+    foreach ($root in $roots)
+    {
+        if (-not (Test-Path $root)) { continue }
+        $exe = Get-ChildItem $root -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+               Where-Object { $_.FullName -match '\\x64\\' } |
+               Sort-Object FullName -Descending | Select-Object -First 1
+        if ($exe) { return $exe.FullName }
+    }
+    $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Sign-File([string]$path)
+{
+    if (-not $Pfx -and -not $Thumbprint)
+    {
+        Write-Host ("подпись: пропущено (нет -Pfx/-Thumbprint) — {0}" -f (Split-Path $path -Leaf))
+        return
+    }
+
+    $signtool = Find-SignTool
+    if (-not $signtool) { throw "signtool.exe не найден: установите Windows SDK (Signing Tools)" }
+
+    $arguments = @("sign", "/fd", "sha256", "/tr", $TimestampUrl, "/td", "sha256")
+    if ($Pfx)
+    {
+        $arguments += @("/f", $Pfx)
+        if ($PfxPassword) { $arguments += @("/p", $PfxPassword) }
+    }
+    else
+    {
+        $arguments += @("/sha1", $Thumbprint)
+    }
+    $arguments += @($path)
+
+    & $signtool @arguments
+    if ($LASTEXITCODE -ne 0) { throw ("signtool: не удалось подписать " + $path) }
+    Write-Host ("подписано: {0}" -f (Split-Path $path -Leaf))
+}
 
 # ---------- проверки ----------
 $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
@@ -44,6 +98,8 @@ Write-Host "compile TgwsOne.exe"
     /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Core.dll `
     (Join-Path $root "src\TgwsOne.cs")
 if ($LASTEXITCODE -ne 0) { throw "ошибка компиляции ($LASTEXITCODE)" }
+
+Sign-File $exe
 
 Copy-Item $Engine (Join-Path $stage "TgWsProxy_windows.exe") -Force
 Copy-Item (Join-Path $root "src\app.ico") $stage -Force
@@ -95,6 +151,8 @@ Write-Host "wix build -> $Out"
     -o $Out `
     $generated
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
+
+Sign-File $Out
 
 $size = [math]::Round((Get-Item $Out).Length / 1MB, 2)
 Write-Host "OK: $Out ($size MB)"
