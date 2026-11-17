@@ -1,0 +1,10 @@
+* text=auto
+*.cs      text diff=csharp
+*.wxs     text
+*.ps1     text
+*.md      text
+*.yml     text
+*.ico     binary
+*.png     binary
+*.exe     binary
+*.msi     binary

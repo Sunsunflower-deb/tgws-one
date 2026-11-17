@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Шаблон MSI. build.ps1 подставляет список компонентов вместо <!--COMPONENTS-->. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="TG WS Proxy" Manufacturer="TgwsOne" Version="$(var.Version)" Language="1033"
+           UpgradeCode="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90" Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <SummaryInformation Description="TG WS Proxy: local MTProto proxy and DPI bypass" Manufacturer="TgwsOne" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of TG WS Proxy is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="TgwsOne">
+        <Directory Id="DIR_LISTS" Name="lists" />
+        <Directory Id="DIR_ZAPRET" Name="zapret">
+          <Directory Id="DIR_ZAPRET_BIN" Name="bin" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="DIR_MENU" Name="TG WS Proxy" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="TG WS Proxy" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="cmp_shortcut" />
+      <ComponentRef Id="cmp_desktop" />
+    </Feature>
+
+    <ComponentGroup Id="AppFiles">
+<!--COMPONENTS-->
+    </ComponentGroup>
+
+    <Component Id="cmp_shortcut" Directory="DIR_MENU" Guid="*">
+      <Shortcut Id="scStartMenu" Name="TG WS Proxy" Description="Local Telegram proxy"
+                Target="[INSTALLDIR]TgwsOne.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon" />
+      <RemoveFolder Id="rmMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\TgwsOne" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="cmp_desktop" Directory="DesktopFolder" Guid="*">
+      <Shortcut Id="scDesktop" Name="TG WS Proxy" Description="Local Telegram proxy"
+                Target="[INSTALLDIR]TgwsOne.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon" />
+      <RegistryValue Root="HKLM" Key="Software\TgwsOne" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Icon Id="AppIcon" SourceFile="$(var.StageDir)\app.ico" />
+
+    <CustomAction Id="EnsureZapretTask" Directory="INSTALLDIR" Execute="immediate" Return="ignore"
+                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --ensure-zapret-task" />
+    <CustomAction Id="RemoveZapretTask" Directory="INSTALLDIR" Execute="immediate" Return="ignore"
+                  ExeCommand="&quot;[INSTALLDIR]TgwsOne.exe&quot; --remove-zapret-task" />
+
+    <InstallExecuteSequence>
+      <Custom Action="EnsureZapretTask" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="RemoveZapretTask" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
