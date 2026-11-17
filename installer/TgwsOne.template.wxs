@@ -8,8 +8,17 @@
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
+    <!-- Версию берём из реестра: на новых сборках Windows (26H2) msiexec отдаёт
+         VersionNT=603 из-за appcompat, и проверка VersionNT >= 1000 ложно срабатывает
+         даже на Windows 11. -->
+    <Property Id="TGWS_WINMAJOR">
+      <RegistrySearch Id="RegWinMajor" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentMajorVersionNumber" Type="raw" />
+    </Property>
+
     <Launch Condition="VersionNT64" Message="TgwsOne requires 64-bit Windows." />
-    <Launch Condition="VersionNT &gt;= 1000" Message="TgwsOne requires Windows 10 or later." />
+    <Launch Condition="TGWS_WINMAJOR OR VersionNT &gt;= 1000" Message="TgwsOne requires Windows 10 or later." />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="TgwsOne">
