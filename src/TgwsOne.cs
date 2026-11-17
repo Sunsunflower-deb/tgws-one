@@ -399,6 +399,26 @@ telesco.pe
         private readonly Settings cfg;
         public Proxy(Settings settings) { cfg = settings; }
 
+        public bool LastStartSwitchedPort;
+        public int OldPort;
+
+        public static int FindFreePort(int from)
+        {
+            for (int port = from; port < from + 100; port++)
+            {
+                try
+                {
+                    System.Net.Sockets.TcpListener probe = new System.Net.Sockets.TcpListener(
+                        System.Net.IPAddress.Loopback, port);
+                    probe.Start();
+                    probe.Stop();
+                    return port;
+                }
+                catch { }
+            }
+            return from;
+        }
+
         public string Host { get { return cfg.GetStr("proxy", "host", "127.0.0.1"); } }
         public int Port { get { return cfg.GetInt("proxy", "port", 1443); } }
         public string Secret { get { return cfg.GetStr("app", "secret", ""); } }
@@ -627,9 +647,13 @@ telesco.pe
             get
             {
                 int count = 0;
+                int mySession = Process.GetCurrentProcess().SessionId;
                 foreach (Process p in SafeProcesses("TgWsProxy_windows"))
                 {
-                    if (!IsOurs(p)) count++;
+                    if (IsOurs(p)) continue;
+                    int session;
+                    try { session = p.SessionId; } catch { continue; }
+                    if (session == mySession) count++;
                 }
                 return count;
             }
@@ -653,10 +677,22 @@ telesco.pe
                 return true;
             }
 
+            LastStartSwitchedPort = false;
             if (PortBusy)
             {
-                Log.Write("порт " + Port + " уже занят другим приложением — закройте его или смените port в TgwsOne.ini");
-                return false;
+                // порт 127.0.0.1 общий для всех сессий: если в системе уже работает прокси
+                // другого пользователя, молча переезжаем на свободный порт.
+                int free = FindFreePort(Port + 1);
+                if (free == Port)
+                {
+                    Log.Write("порт " + Port + " занят, свободных портов рядом нет — смените port в настройках");
+                    return false;
+                }
+                Log.Write("порт " + Port + " занят (возможно, другим пользователем) — перехожу на " + free);
+                OldPort = Port;
+                cfg.Set("proxy", "port", free.ToString());
+                cfg.Save();
+                LastStartSwitchedPort = true;
             }
 
             if (ForeignInstances > 0)
@@ -1966,22 +2002,6 @@ telesco.pe
             base.OnFormClosing(e);
         }
 
-        private static int FindFreePort(int from)
-        {
-            for (int port = from; port < from + 50; port++)
-            {
-                try
-                {
-                    System.Net.Sockets.TcpListener probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, port);
-                    probe.Start();
-                    probe.Stop();
-                    return port;
-                }
-                catch { }
-            }
-            return from;
-        }
-
         private static void OpenUrl(string url)
         {
             ThreadPool.QueueUserWorkItem(delegate { try { Process.Start(url); } catch { } });
@@ -2020,6 +2040,22 @@ telesco.pe
             try { ok = proxy.Start(); }
             finally { btnStart.Enabled = true; RefreshState(); }
 
+            if (ok && proxy.LastStartSwitchedPort)
+            {
+                string message = "Порт " + proxy.OldPort + " занят (возможно, прокси другого пользователя).\n" +
+                                 "Приложение перешло на порт " + proxy.Port + ".\n\n" +
+                                 "Откройте новую ссылку в Telegram — старая указывает на чужой прокси.";
+                Log.Write(message.Replace("\n\n", " ").Replace("\n", " "));
+                try
+                {
+                    tray.ShowBalloonTip(6000, "TG WS Proxy",
+                        "Порт " + proxy.OldPort + " занят — использую " + proxy.Port + ". Откройте новую ссылку в Telegram.",
+                        ToolTipIcon.Warning);
+                }
+                catch { }
+                MessageBox.Show(this, message, "Порт занят", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
             if (!ok && proxy.ForeignInstances > 0)
             {
                 MessageBox.Show(this,
@@ -2032,29 +2068,11 @@ telesco.pe
 
             if (!ok && proxy.PortBusy)
             {
-                int free = FindFreePort(proxy.Port + 1);
-                DialogResult r = MessageBox.Show(this,
-                    "Порт " + proxy.Port + " занят другим приложением (возможно, вторым экземпляром прокси).\n\n" +
-                    "Переключиться на свободный порт " + free + "?\n" +
-                    "(ссылка для Telegram обновится автоматически; «Нет» — откроет настройки)",
-                    "Порт занят", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-
-                if (r == DialogResult.Yes && free != proxy.Port)
-                {
-                    cfg.Set("proxy", "port", free.ToString());
-                    cfg.Save();
-                    proxy.WriteConfig();
-                    Log.Write("порт изменён на " + free);
-                    bool ok2;
-                    btnStart.Enabled = false;
-                    try { ok2 = proxy.Start(); }
-                    finally { btnStart.Enabled = true; RefreshState(); }
-                    if (!ok2) Log.Write("не удалось запустить на порту " + free);
-                }
-                else if (r == DialogResult.No)
-                {
-                    OpenSettings();
-                }
+                MessageBox.Show(this,
+                    "Порт " + proxy.Port + " занят, и свободного порта рядом не нашлось.\n" +
+                    "Укажите другой порт в настройках.",
+                    "Порт занят", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                OpenSettings();
             }
         }
 
