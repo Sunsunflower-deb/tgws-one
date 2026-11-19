@@ -27,25 +27,67 @@ public sealed record ProxyStatus(bool Running, bool Listening, int Port, bool Po
 public sealed class ProxyController
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan LockPollInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
     private const int OutputTailLines = 20;
 
     private readonly AppPaths _paths;
     private readonly AppLog _log;
     private readonly TimeSpan _startTimeout;
+    private readonly TimeSpan _lockTimeout;
 
     // The engine this instance started last. Holding the Process lets .NET reap it when it exits,
     // so a long-lived host (the GUI) does not collect a zombie per restart.
     private Process? _child;
 
-    public ProxyController(AppPaths paths, AppLog log, TimeSpan? startTimeout = null)
+    /// <param name="startTimeout">How long to wait for the engine to accept connections (default 15 s).</param>
+    /// <param name="lockTimeout">How long to wait for another starter to finish (default 20 s).</param>
+    public ProxyController(AppPaths paths, AppLog log, TimeSpan? startTimeout = null, TimeSpan? lockTimeout = null)
     {
         _paths = paths;
         _log = log;
         _startTimeout = startTimeout ?? TimeSpan.FromSeconds(15);
+        _lockTimeout = lockTimeout ?? TimeSpan.FromSeconds(20);
     }
 
+    /// <summary>
+    /// Starts the engine. The whole sequence runs under an exclusive lock file, so two starters (two CLI
+    /// processes, or the CLI and the GUI) cannot both launch an engine: the one that waits then finds
+    /// the engine running and gets <see cref="StartOutcome.AlreadyRunning"/>.
+    /// </summary>
+    /// <exception cref="TimeoutException">Another starter held the lock for longer than the lock timeout.</exception>
     public async Task<StartResult> StartAsync(CancellationToken ct = default)
+    {
+        await using FileStream startLock = await AcquireStartLockAsync(ct).ConfigureAwait(false);
+        return await StartLockedAsync(ct).ConfigureAwait(false);
+    }
+
+    // FileShare.None is an exclusive lock: flock on Unix, a sharing violation on Windows. The OS drops it with
+    // the process, so a crashed starter cannot leave it stuck. The descriptor is close-on-exec, so the engine
+    // we spawn does not inherit it. The file itself stays on disk; deleting it would reopen the race.
+    private async Task<FileStream> AcquireStartLockAsync(CancellationToken ct)
+    {
+        PrivateDirectory.Ensure(_paths.RunDir);
+        var clock = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return new FileStream(_paths.StartLockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1);
+            }
+            catch (IOException) when (clock.Elapsed < _lockTimeout)
+            {
+                await Task.Delay(LockPollInterval, ct).ConfigureAwait(false);
+            }
+            catch (IOException ex)
+            {
+                _log.Write("другой запуск прокси ещё не завершился");
+                throw new TimeoutException($"другой запуск прокси не завершился за {_lockTimeout.TotalSeconds:0} с", ex);
+            }
+        }
+    }
+
+    private async Task<StartResult> StartLockedAsync(CancellationToken ct)
     {
         IniFile ini = IniFile.Load(_paths.Ini);
 

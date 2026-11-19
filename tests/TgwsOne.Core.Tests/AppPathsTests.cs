@@ -22,6 +22,7 @@ public class AppPathsTests
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\logs", p.LogsDir);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\run", p.RunDir);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\run\engine.pid", p.PidFile);
+        Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\run\start.lock", p.StartLockFile);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\logs\app.log", p.AppLogFile);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\logs\proxy.log", p.ProxyLogFile);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\logs\engine-console.log", p.EngineConsoleLog);
@@ -57,6 +58,7 @@ public class AppPathsTests
         Assert.Equal(Path.Join("/x/state", "tgwsone", "logs"), p.LogsDir);
         Assert.Equal(Path.Join("/x/run", "tgwsone"), p.RunDir);
         Assert.Equal(Path.Join("/x/run", "tgwsone", "engine.pid"), p.PidFile);
+        Assert.Equal(Path.Join("/x/run", "tgwsone", "start.lock"), p.StartLockFile);
     }
 
     [Fact]

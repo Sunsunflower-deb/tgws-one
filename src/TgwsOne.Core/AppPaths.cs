@@ -16,6 +16,7 @@ public sealed class AppPaths
     public string LogsDir { get; }
     public string RunDir { get; }
     public string PidFile { get; }
+    public string StartLockFile { get; }
     public string AppLogFile { get; }
     public string ProxyLogFile { get; }
     public string EngineConsoleLog { get; }
@@ -76,6 +77,7 @@ public sealed class AppPaths
         Ini = Join(DataDir, iniName);
         ListsDir = Join(DataDir, "lists");
         PidFile = Join(RunDir, "engine.pid");
+        StartLockFile = Join(RunDir, "start.lock");
         AppLogFile = Join(LogsDir, "app.log");
         ProxyLogFile = Join(LogsDir, "proxy.log");
         EngineConsoleLog = Join(LogsDir, "engine-console.log");

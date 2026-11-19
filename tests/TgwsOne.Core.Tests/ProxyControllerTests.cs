@@ -279,6 +279,83 @@ public class ProxyControllerTests : IDisposable
         Assert.True(TestEnv.WaitFor(() => !Listening(port)));
     }
 
+    // ---------- start lock ----------
+
+    /// <summary>Holds the start lock the way another starting process would.</summary>
+    private FileStream HoldStartLock()
+    {
+        PrivateDirectory.Ensure(Paths.RunDir);
+        return new FileStream(Paths.StartLockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1);
+    }
+
+    [Fact]
+    public async Task Start_WaitsForTheLock_ThenProceeds()
+    {
+        Configure();
+        var held = HoldStartLock();
+        Task<StartResult> start = NewController().StartAsync();
+
+        await Task.Delay(700);
+        Assert.False(start.IsCompleted, "StartAsync should be waiting for the lock");
+        Assert.Empty(TestEnv.FakeEngines());
+
+        held.Dispose();
+        StartResult r = await start;
+
+        Assert.Equal(StartOutcome.Started, r.Outcome);
+    }
+
+    [Fact]
+    public async Task Start_LockHeldTooLong_TimesOutWithoutStartingAnything()
+    {
+        Configure();
+        using var held = HoldStartLock();
+        var c = new ProxyController(Paths, new AppLog(Paths.AppLogFile), TimeSpan.FromSeconds(10), lockTimeout: TimeSpan.FromMilliseconds(500));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => c.StartAsync());
+
+        Assert.Empty(TestEnv.FakeEngines());
+        Assert.False(File.Exists(Paths.PidFile));
+    }
+
+    [Fact]
+    public async Task Start_CancelledWhileWaitingForTheLock()
+    {
+        Configure();
+        using var held = HoldStartLock();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => NewController().StartAsync(cts.Token));
+
+        Assert.Empty(TestEnv.FakeEngines());
+    }
+
+    [Fact]
+    public async Task Start_ReleasesTheLock_AndTheEngineDoesNotInheritIt()
+    {
+        Configure();
+        Assert.True((await NewController().StartAsync()).Ok);
+
+        // If the engine had inherited the descriptor it would still hold the lock after StartAsync returned.
+        using FileStream probe = HoldStartLock();
+
+        Assert.NotNull(probe);
+    }
+
+    [Fact]
+    public async Task Start_Concurrent_OnlyOneEngine_SecondSeesAlreadyRunning()
+    {
+        Configure();
+        var a = NewController();
+        var b = NewController();
+
+        StartResult[] results = await Task.WhenAll(a.StartAsync(), b.StartAsync());
+
+        Assert.Equal([StartOutcome.Started, StartOutcome.AlreadyRunning], results.Select(r => r.Outcome).Order());
+        Assert.All(results, r => Assert.True(r.Ok));
+        Assert.Single(TestEnv.FakeEngines());
+    }
+
     // ---------- restart needed ----------
 
     [Fact]

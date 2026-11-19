@@ -80,6 +80,23 @@ public class CliTests : IDisposable
     }
 
     [Fact]
+    public async Task Cli_TwoConcurrentStarts_ExactlyOneEngine()
+    {
+        int port = Configure();
+
+        // Two separate processes racing for the same engine: the start lock makes the loser see AlreadyRunning.
+        var first = Task.Run(() => RunCli("--start"));
+        var second = Task.Run(() => RunCli("--start"));
+        var results = await Task.WhenAll(first, second);
+
+        Assert.All(results, r => Assert.Equal(0, r.Code));
+        Assert.Single(results, r => r.Out.Contains($"уже запущен (порт {port})"));
+        Assert.Single(results, r => r.Out.Contains($"запущен (порт {port})") && !r.Out.Contains("уже"));
+        Assert.Single(TestEnv.FakeEngines());
+        Assert.True(Listening(port));
+    }
+
+    [Fact]
     public void Cli_Start_PortBusy_ReportsSwitch()
     {
         int port = Configure();
