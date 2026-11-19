@@ -12,6 +12,7 @@ internal static class LibC
     private const uint StatxBasicStats = 0xFFF; // STATX_BASIC_STATS | STATX_BTIME
     private const int StatxSize = 256;          // sizeof(struct statx)
     public const int SigHup = 1;
+    public const int SigTerm = 15;
 
     [DllImport("libc", EntryPoint = "statx", SetLastError = true)]
     private static extern int StatxNative(int dirfd, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, byte[] buf);

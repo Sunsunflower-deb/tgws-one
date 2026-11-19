@@ -1,5 +1,6 @@
 using System.Reflection;
 using TgwsOne.Core;
+using TgwsOne.Core.Zapret;
 
 namespace TgwsOne;
 
@@ -20,6 +21,8 @@ internal static class Program
           --status     показать состояние (код 0 — слушает, 1 — нет)
           --selftest   проверить окружение (код — число найденных проблем)
           --version    показать версию
+          --zapret     управлять обходом DPI через службу: --zapret status|on|off|use <id>|strategies|exclusions
+          --service    запустить службу обхода DPI (для systemd / службы Windows)
         """;
 
     private static async Task<int> Main(string[] args)
@@ -30,8 +33,12 @@ internal static class Program
             return 0;
         }
 
+        if (args[0] == "--zapret")
+            return await ZapretCli.RunAsync(args[1..], ServicePaths.Current, Console.Out, Console.Error);
+
         switch (args.Length == 1 ? args[0] : "")
         {
+            case "--service": return await ServiceHost.RunAsync();
             case "--start": return await StartAsync();
             case "--stop": return await StopAsync();
             case "--status": return Status();

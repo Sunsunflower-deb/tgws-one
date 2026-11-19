@@ -66,6 +66,9 @@ public sealed class ServicePaths
 
     public static ServicePaths For(OsKind os, Func<string, string?> env) => new(os, env);
 
+    /// <summary>This machine, from the real environment (evaluated on every access, like <see cref="AppPaths.Current"/>).</summary>
+    public static ServicePaths Current => For(OperatingSystem.IsWindows() ? OsKind.Windows : OsKind.Linux, Environment.GetEnvironmentVariable);
+
     /// <summary>The service's own state: <c>enabled</c> and the chosen strategy.</summary>
     public string StateIni { get; }
     /// <summary>Target lists (Telegram hosts, Cloudflare ranges): admin-owned.</summary>
