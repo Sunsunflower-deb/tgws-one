@@ -1,0 +1,20 @@
+# TgwsOne: the privileged half. It owns nfqws2 and the nftables rules, and answers the control socket
+# /run/tgwsone/control.sock, so ordinary users can switch the bypass without any password.
+# @PREFIX@ is filled in by `make install`.
+[Unit]
+Description=TgwsOne: обход DPI (zapret2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=@PREFIX@/lib/tgwsone/tgwsone --service
+Restart=on-failure
+# /run/tgwsone (the socket), /var/lib/tgwsone (state and exclusions), /var/log/tgwsone, /etc/tgwsone (lists, strategies)
+RuntimeDirectory=tgwsone
+StateDirectory=tgwsone
+LogsDirectory=tgwsone
+ConfigurationDirectory=tgwsone
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,10 @@ APP_BIN    := $(PUB)/$(RID_LINUX)/tgwsone
 ENGINE_BIN := out/engine/$(RID_LINUX)/tgws-engine
 LIBDIR     := $(DESTDIR)$(PREFIX)/lib/tgwsone
 BINDIR     := $(DESTDIR)$(PREFIX)/bin
+UNITDIR    := $(DESTDIR)$(PREFIX)/lib/systemd/system
+UNIT       := tgwsone-zapret.service
+ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
+LISTS_SRC  := $(PUB)/$(RID_LINUX)/lists
 
 .PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall clean
 
@@ -45,19 +49,33 @@ test-engine:
 run:
 	$(APP_BIN) $(ARGS)
 
-# Installs the two binaries side by side (the app finds its engine next to itself) and a relative symlink
-# in bin/. Does not build: run `make build engine` first. DESTDIR is for packagers; PREFIX=/usr for a package.
+# Installs the two binaries side by side (the app finds its engine, the zapret2 bundle and the shipped lists next to
+# itself), a relative symlink in bin/, and the systemd unit of the bypass service (not enabled). Does not build: run
+# `make zapret2 build engine` first. DESTDIR is for packagers; PREFIX=/usr for a package.
+# The bundle is copied with --no-preserve=ownership, not `cp -a`: after `sudo make install` the files must belong to
+# root, not to whoever built them, because nfqws2 and the Lua scripts run as root.
 install:
-	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] || { echo "сначала выполните make build и make engine" >&2; exit 1; }
-	install -d $(LIBDIR) $(BINDIR)
+	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
+	install -d $(LIBDIR) $(BINDIR) $(UNITDIR)
 	install -m 0755 $(APP_BIN) $(LIBDIR)/tgwsone
 	install -m 0755 $(ENGINE_BIN) $(LIBDIR)/tgws-engine
 	ln -sf ../lib/tgwsone/tgwsone $(BINDIR)/tgwsone
+	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
+	cp -r --no-preserve=ownership,mode $(ZAPRET_SRC) $(LIBDIR)/zapret2
+	cp -r --no-preserve=ownership,mode $(LISTS_SRC) $(LIBDIR)/lists
+	chmod -R u=rwX,go=rX $(LIBDIR)/zapret2 $(LIBDIR)/lists
+	chmod 0755 $(LIBDIR)/zapret2/nfqws2
+	sed 's|@PREFIX@|$(PREFIX)|g' packaging/linux/$(UNIT).in > $(UNITDIR)/$(UNIT)
+	chmod 0644 $(UNITDIR)/$(UNIT)
+	@echo "служба установлена, но не включена: systemctl daemon-reload && systemctl enable --now tgwsone-zapret"
 
-# Removes exactly what install created; the directory only if nothing else is in it.
+# Removes exactly what install created; a directory only if nothing else is in it. What the service itself made
+# (/var/lib/tgwsone, /var/log/tgwsone) and the administrator's files (/etc/tgwsone) are not ours to remove.
+# A service that was enabled has to be stopped first: systemctl disable --now tgwsone-zapret
 uninstall:
-	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(BINDIR)/tgwsone
-	rmdir $(LIBDIR) 2>/dev/null || true
+	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(BINDIR)/tgwsone $(UNITDIR)/$(UNIT)
+	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
+	rmdir $(LIBDIR) $(UNITDIR) 2>/dev/null || true
 
 clean:
 	rm -rf out && find src tests -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
