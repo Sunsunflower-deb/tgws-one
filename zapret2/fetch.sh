@@ -48,6 +48,7 @@ rm -rf "$out/linux-x64" "$out/win-x64"
 for rid in linux-x64 win-x64; do
     mkdir -p "$out/$rid/lua" "$out/$rid/files/fake"
     cp "$work/x/$top"/lua/zapret-{lib,antidpi,auto}.lua "$out/$rid/lua/"
+    cp "$here/tgws-state.lua" "$out/$rid/lua/"   # ours: the auto strategy's per-host state for the UI
     cp "$work/x/$top"/files/fake/tls_clienthello_{www_google_com,vk_com}.bin "$out/$rid/files/fake/"
 done
 install -m 0755 "$work/x/$top/binaries/linux-x86_64/nfqws2" "$out/linux-x64/nfqws2"

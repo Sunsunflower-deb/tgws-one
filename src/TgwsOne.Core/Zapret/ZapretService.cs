@@ -118,6 +118,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
             string? error = await _runner.ApplyAsync(argv, ct);
             if (error != null) return Fail($"стратегия не прошла проверку: {error}");
             _applyError = null;
+            ClearAutoState();
         }
 
         _state = _state with { Strategy = id };
@@ -169,7 +170,17 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
             _applyError = error;
             return error;
         }
-        return await _runner.ApplyAsync(argv, ct);
+        string? failure = await _runner.ApplyAsync(argv, ct);
+        if (failure == null) ClearAutoState();
+        return failure;
+    }
+
+    // A new run starts with a clean slate: what the previous one picked per host must not be shown as current.
+    // (The script only rewrites the file when its content changes, so a stale one would otherwise linger.)
+    private void ClearAutoState()
+    {
+        try { File.Delete(_paths.AutoStateFile); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* nothing to clear, or not ours to */ }
     }
 
     private string MissingBundle() => $"пакет zapret2 не найден: {_bundle.Exe}";
@@ -208,8 +219,9 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
         else state = runner.ToString().ToLowerInvariant();
         if (state == "error") lastError ??= _applyError;
 
+        IReadOnlyList<AutoHost>? auto = _state.Strategy == BuiltInStrategies.Auto ? AutoState.Read(_paths.AutoStateFile) : null;
         return new ZapretStatus(_state.Enabled, _state.Strategy, state, _runner.Pid, _runner.Since,
-            _runner.Restarts, lastError, _bundle.Version);
+            _runner.Restarts, lastError, _bundle.Version, auto);
     }
 
     private bool TrySave([NotNullWhen(false)] out string? error)

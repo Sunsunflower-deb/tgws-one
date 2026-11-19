@@ -440,6 +440,83 @@ public class ZapretServiceTests : IDisposable
         Assert.Contains("crashing as asked", status.LastError);
     }
 
+    private static void WriteAutoState(ServicePaths paths, string text)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.AutoStateFile)!);
+        File.WriteAllText(paths.AutoStateFile, text);
+    }
+
+    [LinuxFact]
+    public async Task Status_WhileAuto_ListsWhatTheScriptReported()
+    {
+        await using Rig rig = await StartRigAsync();
+        WriteAutoState(rig.Paths, "b.example.com\t2\t1\na.example.com\t4\t0\n");
+
+        ZapretStatus status = (await rig.Send("status")).Status!;
+
+        Assert.Equal([new AutoHost("a.example.com", "aggressive", 0), new AutoHost("b.example.com", "split", 1)], status.Auto);
+    }
+
+    [LinuxFact]
+    public async Task Status_WhileAuto_WithoutAFile_HasAnEmptyList()
+    {
+        await using Rig rig = await StartRigAsync();
+
+        ZapretStatus status = (await rig.Send("status")).Status!;
+
+        Assert.NotNull(status.Auto);
+        Assert.Empty(status.Auto);
+    }
+
+    [LinuxFact]
+    public async Task Status_WithAnotherStrategy_OmitsAuto()
+    {
+        await using Rig rig = await StartRigAsync();
+        Assert.True((await rig.Send("use", "split")).Ok);
+        WriteAutoState(rig.Paths, "a.example.com\t2\t0\n");
+
+        ZapretStatus status = (await rig.Send("status")).Status!;
+
+        Assert.Null(status.Auto);
+        Assert.DoesNotContain("\"auto\":", ControlProtocol.Serialize(new ControlResponse(true, Status: status)));
+    }
+
+    [LinuxFact]
+    public async Task Start_ClearsWhatAPreviousRunLeftBehind()
+    {
+        await using Rig rig = await StartRigAsync(beforeStart: p => WriteAutoState(p, "stale.example.com\t3\t2\n"));
+
+        Assert.False(File.Exists(rig.Paths.AutoStateFile));
+        Assert.Empty((await rig.Send("status")).Status!.Auto!);
+    }
+
+    [LinuxFact]
+    public async Task Start_WhileOff_LeavesTheFileAlone()
+    {
+        await using Rig rig = await StartRigAsync(beforeStart: p =>
+        {
+            new ServiceState(false, "auto").Save(p.StateIni);
+            WriteAutoState(p, "old.example.com\t2\t0\n");
+        });
+
+        Assert.Equal([new AutoHost("old.example.com", "split", 0)], (await rig.Send("status")).Status!.Auto);
+    }
+
+    [LinuxFact]
+    public async Task Use_ClearsTheFile_ButNotWhenTheNewStrategyIsRefused()
+    {
+        await using Rig rig = await StartRigAsync();
+        WriteAutoState(rig.Paths, "a.example.com\t2\t0\n");
+
+        _env.WriteCtl("dryrun_fail=1");
+        Assert.False((await rig.Send("use", "split")).Ok);
+        Assert.True(File.Exists(rig.Paths.AutoStateFile));   // the old run goes on, so does its state
+
+        _env.WriteCtl();
+        Assert.True((await rig.Send("use", "split")).Ok);
+        Assert.False(File.Exists(rig.Paths.AutoStateFile));
+    }
+
     [LinuxFact]
     public async Task Dispose_StopsTheChild()
     {

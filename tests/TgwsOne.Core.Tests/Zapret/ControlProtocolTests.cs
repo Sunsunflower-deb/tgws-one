@@ -46,6 +46,17 @@ public class ControlProtocolTests
     }
 
     [Fact]
+    public void Response_RoundTrip_StatusWithAutoHosts()
+    {
+        var auto = new[] { new AutoHost("a.example.com", "split", 1), new AutoHost("b.example.com", "fake-tls", 0) };
+        var status = new ZapretStatus(true, "auto", "running", 1, null, 0, null, "v1.0.7", auto);
+        string line = ControlProtocol.Serialize(new ControlResponse(true, Status: status));
+
+        Assert.Contains("\"auto\":[{\"host\":\"a.example.com\",\"strategy\":\"split\",\"failures\":1},{\"host\":\"b.example.com\",\"strategy\":\"fake-tls\",\"failures\":0}]", line);
+        Assert.Equal(auto, ControlProtocol.ParseResponse(line).Status!.Auto);
+    }
+
+    [Fact]
     public void Response_RoundTrip_StatusWithoutOptionalFields()
     {
         var status = new ZapretStatus(false, "split", "disabled", null, null, 0, null, "v1.0.7");

@@ -11,6 +11,9 @@ public static class ZapretArgs
     /// <summary>The key of the shared <c>autostate</c> table: both profiles use it, so a host has one strategy.</summary>
     public const string AutoStateKey = "tgws";
 
+    /// <summary>The folder (inside the service's state dir) nfqws2 makes writable for Lua; <c>auto</c> keeps its state file there.</summary>
+    public const string WritableFolder = "zapret-state";
+
     private const string CustomPrefix = "custom:";
 
     /// <summary>
@@ -75,7 +78,7 @@ public static class ZapretArgs
         if (auto)
         {
             argv.Add(Lua("zapret-auto.lua"));
-            argv.Add($"--writable={OsPath.Join(os, stateDir, "zapret-state")}");
+            argv.Add($"--writable={OsPath.Join(os, stateDir, WritableFolder)}");
             argv.Add(Lua("tgws-state.lua"));
         }
         argv.AddRange(extraInits.Distinct());

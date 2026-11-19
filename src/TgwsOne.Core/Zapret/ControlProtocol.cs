@@ -17,9 +17,12 @@ public static class ControlCommands
 
 public sealed record ControlRequest(string Cmd, string? Strategy = null, IReadOnlyList<string>? Hosts = null, IReadOnlyList<string>? Ips = null);
 
-/// <summary><c>State</c> is one of disabled, starting, running, backoff, error.</summary>
+/// <summary>
+/// <c>State</c> is one of disabled, starting, running, backoff, error. <c>Auto</c> (per host, sorted) is only
+/// there while the strategy is <c>auto</c>.
+/// </summary>
 public sealed record ZapretStatus(bool Enabled, string Strategy, string State, int? Pid, DateTimeOffset? Since,
-                                  int Restarts, string? LastError, string Bundle);
+                                  int Restarts, string? LastError, string Bundle, IReadOnlyList<AutoHost>? Auto = null);
 
 /// <summary><c>Kind</c> is "builtin" or "custom".</summary>
 public sealed record StrategyItem(string Id, string Kind);

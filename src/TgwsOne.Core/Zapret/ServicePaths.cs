@@ -58,6 +58,7 @@ public sealed class ServicePaths
             WindowsRoot = null;
         }
 
+        AutoStateFile = Join(StateDir, ZapretArgs.WritableFolder, AutoState.FileName);
         Lists = new ZapretLists(
             Join(ListsDir, CloudflareFile), Join(ListsDir, TelegramFile),
             Join(ExclusionsDir, "exclude-hosts.txt"), Join(ExclusionsDir, "exclude-ips.txt"));
@@ -76,6 +77,8 @@ public sealed class ServicePaths
     public string LogsDir { get; }
     /// <summary>The service's scratch space (the Lua state file of <c>auto</c> goes into a folder below it).</summary>
     public string StateDir { get; }
+    /// <summary>Where the Lua script of the <c>auto</c> strategy writes which strategy it picked for each host.</summary>
+    public string AutoStateFile { get; }
     /// <summary>Windows: the pipe name. Linux: the Unix socket path.</summary>
     public string Endpoint { get; }
     /// <summary>Windows: the folder whose ACL the service tightens and where 1.x left its files; null on Linux.</summary>

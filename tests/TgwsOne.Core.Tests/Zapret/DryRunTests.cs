@@ -58,9 +58,6 @@ public class DryRunTests
     {
         string bundleDir = tmp.Combine("zapret2");
         CopyDirectory(TestRepo.Zapret2Linux!, bundleDir);
-        // The auto strategy loads tgws-state.lua; the dry run only needs the file to exist.
-        string stateLua = Path.Combine(bundleDir, "lua", "tgws-state.lua");
-        if (!File.Exists(stateLua)) File.WriteAllText(stateLua, "-- placeholder for the dry run\n");
 
         string lists = tmp.Combine("lists");
         Directory.CreateDirectory(lists);

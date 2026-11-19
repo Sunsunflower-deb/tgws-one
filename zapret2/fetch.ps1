@@ -36,6 +36,7 @@ try {
         foreach ($f in 'zapret-lib.lua', 'zapret-antidpi.lua', 'zapret-auto.lua') {
             Copy-Item "$top\lua\$f" "$dir\lua\"
         }
+        Copy-Item (Join-Path $here 'tgws-state.lua') "$dir\lua\"   # ours: the auto strategy's per-host state for the UI
         foreach ($f in 'tls_clienthello_www_google_com.bin', 'tls_clienthello_vk_com.bin') {
             Copy-Item "$top\files\fake\$f" "$dir\files\fake\"
         }

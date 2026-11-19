@@ -85,6 +85,20 @@ public class ServicePathsTests
     }
 
     [Fact]
+    public void AutoStateFile_LivesInTheFolderNfqws2MakesWritable()
+    {
+        Assert.Equal("/var/lib/tgwsone/zapret-state/autostate.tsv", ServicePaths.For(OsKind.Linux, Env()).AutoStateFile);
+        Assert.Equal(@"C:\ProgramData\TgwsOne\state\zapret-state\autostate.tsv", ServicePaths.For(OsKind.Windows, Env()).AutoStateFile);
+        Assert.Equal("/tmp/x/state/zapret-state/autostate.tsv", ServicePaths.For(OsKind.Linux, Env(("TGWS_SERVICE_ROOT", "/tmp/x"))).AutoStateFile);
+
+        // The argument builder points --writable at the very same folder.
+        ServicePaths p = ServicePaths.For(OsKind.Linux, Env());
+        var bundle = ZapretBundle.Locate(OsKind.Linux, "/opt/tgwsone", _ => null);
+        string writable = ZapretArgs.Build(OsKind.Linux, bundle, p.Lists, "auto", p.StateDir).Single(a => a.StartsWith("--writable=", StringComparison.Ordinal));
+        Assert.Equal(Path.GetDirectoryName(p.AutoStateFile), writable["--writable=".Length..]);
+    }
+
+    [Fact]
     public void EmptyOverride_IsIgnored()
         => Assert.Equal("/var/lib/tgwsone/state.ini", ServicePaths.For(OsKind.Linux, Env(("TGWS_SERVICE_ROOT", ""))).StateIni);
 
