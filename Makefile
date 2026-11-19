@@ -8,10 +8,14 @@ ENGINE_BIN := out/engine/$(RID_LINUX)/tgws-engine
 LIBDIR     := $(DESTDIR)$(PREFIX)/lib/tgwsone
 BINDIR     := $(DESTDIR)$(PREFIX)/bin
 
-.PHONY: engine build build-win test test-engine run install uninstall clean
+.PHONY: engine engine-lock build build-win test test-engine run install uninstall clean
 
 engine:
 	engine/build-engine.sh
+
+# Regenerates engine/requirements.lock (every package with hashes, for Linux and Windows) from requirements.in.
+engine-lock:
+	uv pip compile --universal --generate-hashes --allow-unsafe --python-version 3.12 engine/requirements.in -o engine/requirements.lock
 
 build:
 	dotnet publish src/TgwsOne -c Release -r $(RID_LINUX) --self-contained -p:PublishSingleFile=true -o $(PUB)/$(RID_LINUX)

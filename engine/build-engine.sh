@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds the headless tg-ws-proxy engine for Linux: out/engine/linux-x64/tgws-engine.
 #
-# Downloads the pinned upstream commit, verifies its sha256, installs the pinned dependencies into a fresh
-# venv (uv) and bundles proxy/tg_ws_proxy.py with PyInstaller --onefile. Everything happens in a temporary
-# directory that is removed afterwards. Needs: bash, curl, tar, sha256sum, uv.
+# Downloads the pinned upstream commit, verifies its sha256, installs the dependencies from the hashed
+# requirements.lock into a fresh venv (uv) and bundles proxy/tg_ws_proxy.py with PyInstaller --onefile.
+# Everything happens in a temporary directory that is removed afterwards. Needs: bash, curl, tar, sha256sum, uv.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,8 +44,9 @@ tar -xzf "$work/upstream.tar.gz" -C "$work/src" --strip-components=1 --no-same-o
 echo "==> python $PYTHON venv and pinned packages"
 uv venv --python "$PYTHON" "$work/venv"
 py="$work/venv/bin/python"
-read -ra pins <<< "$PIP_PINS"   # an array: the [http2] in a pin must not be treated as a glob
-uv pip install --python "$py" "${pins[@]}"
+# requirements.lock pins every package with hashes (the Windows-only and macOS-only ones sit under markers).
+# --require-hashes refuses anything that is missing from it, unpinned, or does not match its hash.
+uv pip install --python "$py" --require-hashes -r "$here/requirements.lock"
 
 echo "==> bundling"
 mkdir -p "$out"

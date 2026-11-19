@@ -1,0 +1,9 @@
+# Direct dependencies of the headless engine build. Edit this file, then run `make engine-lock`:
+# requirements.lock (every package, with hashes) is what the build scripts actually install.
+#
+# Only what the engine imports. The tray GUI libraries upstream also lists (customtkinter, pystray, Pillow,
+# psutil, pyperclip) are not needed and are excluded from the bundle.
+cryptography==46.0.5
+httpx[http2]==0.28.1
+certifi==2026.10.23
+pyinstaller==6.22.3

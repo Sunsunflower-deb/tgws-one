@@ -13,7 +13,5 @@ UPSTREAM_SHA256=aa4b82f8bf78957e4ff698fd71e1cf8cbd57f4bba420137ad6b59858f87340b0
 
 PYTHON=3.12
 
-# Only what the headless engine imports. The tray GUI libraries upstream also lists (customtkinter, pystray,
-# Pillow, psutil, pyperclip) are not needed and are excluded from the bundle.
-# Transitive dependencies (h2, hpack, httpcore, ...) are resolved at build time.
-PIP_PINS="cryptography==46.0.5 httpx[http2]==0.28.1 certifi==2026.10.23 pyinstaller==6.22.3"
+# The Python packages (with hashes, transitive ones included) are in requirements.lock, generated from
+# requirements.in by `make engine-lock`.

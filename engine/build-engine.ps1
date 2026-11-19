@@ -3,8 +3,9 @@
     Builds the headless tg-ws-proxy engine for Windows: out\engine\win-x64\tgws-engine.exe
 
 .DESCRIPTION
-    The same steps as build-engine.sh: download the pinned upstream commit, verify its sha256, install the pinned
-    dependencies into a fresh venv (uv) and bundle proxy/tg_ws_proxy.py with PyInstaller --onefile.
+    The same steps as build-engine.sh: download the pinned upstream commit, verify its sha256, install the
+    dependencies from the hashed requirements.lock into a fresh venv (uv) and bundle proxy/tg_ws_proxy.py with
+    PyInstaller --onefile.
     Needs: Windows 10 1803+ (tar.exe), uv on PATH. Not run in SP1 (no Windows here); first run is in the VM (SP5).
 #>
 $ErrorActionPreference = 'Stop'
@@ -55,8 +56,9 @@ try {
     $venv = Join-Path $work 'venv'
     Invoke-Native 'uv' @('venv', '--python', $lock.PYTHON, $venv)
     $py = Join-Path $venv 'Scripts\python.exe'
-    $pins = @($lock.PIP_PINS -split '\s+' | Where-Object { $_ })
-    Invoke-Native 'uv' (@('pip', 'install', '--python', $py) + $pins)
+    # requirements.lock pins every package with hashes (the Windows-only ones sit under markers).
+    # --require-hashes refuses anything that is missing from it, unpinned, or does not match its hash.
+    Invoke-Native 'uv' @('pip', 'install', '--python', $py, '--require-hashes', '-r', (Join-Path $here 'requirements.lock'))
 
     Write-Host '==> bundling'
     New-Item -ItemType Directory -Path $out -Force | Out-Null
