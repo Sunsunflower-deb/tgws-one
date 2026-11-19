@@ -65,6 +65,18 @@ public sealed class TestEnv : IDisposable
         throw new FileNotFoundException("FakeEngine apphost not found (looked next to the tests and in " + fallback + ")");
     }
 
+    /// <summary>Polls until the condition holds or the timeout passes; returns the last result.</summary>
+    public static bool WaitFor(Func<bool> condition, int timeoutMs = 5000)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            if (condition()) return true;
+            Thread.Sleep(25);
+        }
+        return condition();
+    }
+
     /// <summary>A port that was free a moment ago.</summary>
     public static int FreePort()
     {

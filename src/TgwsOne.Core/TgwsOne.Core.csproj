@@ -5,4 +5,8 @@
     <AssemblyName>TgwsOne.Core</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TgwsOne.Core.Tests" />
+  </ItemGroup>
+
 </Project>
