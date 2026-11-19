@@ -17,7 +17,7 @@ public static partial class DetachedLauncher
     public static Process Start(string exe, IReadOnlyList<string> args, string consoleLog, string workDir)
     {
         string? logDir = Path.GetDirectoryName(consoleLog);
-        if (!string.IsNullOrEmpty(logDir)) Directory.CreateDirectory(logDir);
+        if (!string.IsNullOrEmpty(logDir)) PrivateDirectory.Ensure(logDir);
 
         return OperatingSystem.IsWindows()
             ? StartWindows(exe, args, consoleLog, workDir)

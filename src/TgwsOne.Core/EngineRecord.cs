@@ -33,7 +33,7 @@ public sealed record EngineRecord(int Pid, DateTime StartTimeUtc, string ExePath
     /// <summary>One value per line: PID, start time (UTC ticks), executable path, argv hash.</summary>
     public void Write(string pidFile)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(pidFile)!);
+        PrivateDirectory.Ensure(Path.GetDirectoryName(pidFile)!);
         string tmp = $"{pidFile}.{Environment.ProcessId}.tmp";
         File.WriteAllLines(tmp,
         [

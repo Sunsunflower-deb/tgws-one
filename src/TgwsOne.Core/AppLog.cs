@@ -26,7 +26,7 @@ public sealed class AppLog
             try
             {
                 string? dir = Path.GetDirectoryName(_path);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                if (!string.IsNullOrEmpty(dir)) PrivateDirectory.Ensure(dir);
                 var fi = new FileInfo(_path);
                 if (fi.Exists && fi.Length > _maxBytes)
                 {

@@ -58,7 +58,7 @@ internal static class SelfTest
         string logFile = Path.Combine(paths.LogsDir, "selftest.log");
         try
         {
-            Directory.CreateDirectory(paths.LogsDir);
+            PrivateDirectory.Ensure(paths.LogsDir);
             File.WriteAllLines(logFile, lines);
         }
         catch (Exception ex)

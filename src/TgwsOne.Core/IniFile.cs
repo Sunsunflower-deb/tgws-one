@@ -73,7 +73,7 @@ public sealed class IniFile
     public void Save()
     {
         string? dir = System.IO.Path.GetDirectoryName(Path);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        if (!string.IsNullOrEmpty(dir)) PrivateDirectory.Ensure(dir);
 
         var sb = new StringBuilder();
         bool first = true;
