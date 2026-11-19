@@ -68,12 +68,18 @@ public sealed class IniFile
 
     /// <summary>
     /// Writes UTF-8 without BOM. Goes through a temp file and a rename so a concurrent reader
-    /// (the CLI and the GUI share this file) never sees a half-written INI.
+    /// (the CLI and the GUI share this file) never sees a half-written INI. The directory is made private
+    /// (0700 on Linux) unless <paramref name="privateDirectory"/> is false: the bypass service keeps its state in
+    /// a folder that nfqws2 must be able to reach too (see <see cref="PublicDirectory"/>).
     /// </summary>
-    public void Save()
+    public void Save(bool privateDirectory = true)
     {
         string? dir = System.IO.Path.GetDirectoryName(Path);
-        if (!string.IsNullOrEmpty(dir)) PrivateDirectory.Ensure(dir);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            if (privateDirectory) PrivateDirectory.Ensure(dir);
+            else PublicDirectory.Ensure(dir);
+        }
 
         var sb = new StringBuilder();
         bool first = true;

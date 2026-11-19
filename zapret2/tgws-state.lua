@@ -5,7 +5,11 @@
 -- The service displays that, so this script writes it out: every few seconds, and only when something changed
 -- (no pointless disk writes), to autostate.tsv inside the --writable folder, one line per host:
 --     host <TAB> strategy number <TAB> failure counter
--- The file is written whole under a temporary name and then renamed, so a reader never sees half of it.
+--
+-- This runs inside nfqws2's sandbox: root privileges are already dropped and a seccomp filter forbids a number of file
+-- operations (a violation kills the process). Only plain open/write/close is used, hence no write-to-temp-and-rename: a
+-- reader can in principle catch the file half-written, which the service tolerates (it skips lines that don't parse, and
+-- the next change rewrites everything).
 --
 -- nfqws2 deletes a timer whose function raises an error, so everything below runs under pcall.
 -- Keep STATE_KEY in step with the key= of the circular instances (ZapretArgs.AutoStateKey) and FILE_NAME with
@@ -49,13 +53,10 @@ local function dump()
 	if content ~= "" then content = content .. "\n" end
 	if content == last_written then return end
 
-	local final = join(dir, FILE_NAME)
-	local tmp = final .. ".tmp"
-	local f = assert(io.open(tmp, "wb"))
+	local f = assert(io.open(join(dir, FILE_NAME), "wb"))
 	local ok, err = f:write(content)
 	f:close()
 	assert(ok, err)
-	assert(os.rename(tmp, final))
 	last_written = content
 end
 

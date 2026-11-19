@@ -43,7 +43,9 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
     {
         _paths.SeedTargetLists(_appListsDir);
         _paths.EnsureExclusionFiles();
-        Directory.CreateDirectory(_paths.StateDir);   // nfqws2 creates its --writable folder, but not the folder above it
+        // nfqws2 creates its --writable folder, but not the folder above it, and (running as an unprivileged user once
+        // started) must be able to get into that one to let the Lua script write its state file.
+        PublicDirectory.Ensure(_paths.StateDir);
 
         _state = ServiceState.Load(_paths.StateIni);
         _log.Write($"служба: состояние — {(_state.Enabled ? "включено" : "выключено")}, стратегия {_state.Strategy}");

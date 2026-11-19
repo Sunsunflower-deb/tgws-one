@@ -51,12 +51,13 @@ public static partial class Exclusions
 
     /// <summary>
     /// Writes the header (each line made a comment) and the items, UTF-8 without BOM, via a temp file and a rename
-    /// so the running process never reads a half-written list.
+    /// so the running process never reads a half-written list. nfqws2 re-reads the file after dropping root
+    /// privileges, so the folder and the file are made readable for everyone whatever the umask is.
     /// </summary>
     public static void Write(string file, IReadOnlyList<string> items, string headerComment)
     {
         string? dir = Path.GetDirectoryName(file);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        if (!string.IsNullOrEmpty(dir)) PublicDirectory.Ensure(dir);
 
         var sb = new StringBuilder();
         foreach (string line in headerComment.Split('\n'))
@@ -70,6 +71,8 @@ public static partial class Exclusions
         File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
         try
         {
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(tmp, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
             File.Move(tmp, file, overwrite: true);
         }
         catch

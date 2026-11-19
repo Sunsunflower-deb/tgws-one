@@ -159,7 +159,7 @@ public class TgwsStateLuaTests
             """);
 
         Assert.Equal("1.2.3.4\t3\t2\na.example.com\t4\t0\nb.example.com\t2\t1\nfresh.example.com\t1\t0\n", r.Tsv);
-        Assert.Equal(["autostate.tsv"], r.Files);   // the temporary file was renamed away
+        Assert.Equal(["autostate.tsv"], r.Files);   // nothing else is left in the folder
         Assert.Equal(
         [
             new AutoHost("1.2.3.4", "split-stealth", 2), new AutoHost("a.example.com", "aggressive", 0),

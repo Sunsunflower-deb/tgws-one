@@ -91,18 +91,22 @@ public sealed class ServicePaths
     /// <summary>Copies the two target lists from <paramref name="appListsDir"/> where they are missing; never overwrites.</summary>
     public void SeedTargetLists(string appListsDir)
     {
-        Directory.CreateDirectory(ListsDir);
+        PublicDirectory.Ensure(ListsDir);   // nfqws2 reads the lists after dropping root privileges
         foreach (string name in new[] { TelegramFile, CloudflareFile })
         {
             string target = Path.Combine(ListsDir, name);
             string source = Path.Combine(appListsDir, name);
-            if (!File.Exists(target) && File.Exists(source)) File.Copy(source, target);
+            if (File.Exists(target) || !File.Exists(source)) continue;
+            File.Copy(source, target);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
         }
     }
 
     /// <summary>Creates both exclusion files (a header, no entries) where they are missing.</summary>
     public void EnsureExclusionFiles()
     {
+        PublicDirectory.Ensure(ExclusionsDir);   // also repairs a folder an older run left unreadable for nfqws2
         foreach (string file in new[] { Lists.ExcludeHosts, Lists.ExcludeIps })
             if (!File.Exists(file)) Exclusions.Write(file, [], ExclusionsHeader);
     }
