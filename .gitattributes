@@ -8,3 +8,6 @@
 *.png     binary
 *.exe     binary
 *.msi     binary
+
+# SP1 test fixtures keep their CRLF line endings (as 1.x writes them)
+tests/TgwsOne.Core.Tests/Fixtures/*.ini -text
