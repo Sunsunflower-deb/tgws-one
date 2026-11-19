@@ -6,37 +6,6 @@ public class NftManagerTests
 {
     private const string Key = "net.netfilter.nf_conntrack_tcp_be_liberal";
 
-    private sealed record Call(string File, string[] Args, string? Stdin);
-
-    private sealed class FakeRunner : ICommandRunner
-    {
-        public List<Call> Calls { get; } = [];
-        public Func<Call, (int Code, string Output)> Respond { get; set; } = _ => (0, "");
-
-        public Task<(int Code, string Output)> RunAsync(string file, IReadOnlyList<string> args, string? stdin = null, CancellationToken ct = default)
-        {
-            var call = new Call(file, [.. args], stdin);
-            Calls.Add(call);
-            return Task.FromResult(Respond(call));
-        }
-    }
-
-    private sealed class FakeSysctl : ISysctl
-    {
-        public Dictionary<string, string> Values { get; } = [];
-        public List<string> Writes { get; } = [];
-        public bool FailWrites { get; set; }
-
-        public string? Read(string key) => Values.TryGetValue(key, out string? v) ? v : null;
-
-        public void Write(string key, string value)
-        {
-            if (FailWrites) throw new UnauthorizedAccessException("read-only /proc/sys");
-            Writes.Add($"{key}={value}");
-            Values[key] = value;
-        }
-    }
-
     private const string Golden = """
         table inet tgwsone {
           chain post {
@@ -75,7 +44,7 @@ public class NftManagerTests
 
         await nft.ApplyAsync();
 
-        Call call = Assert.Single(runner.Calls);
+        RunnerCall call = Assert.Single(runner.Calls);
         Assert.Equal("nft", call.File);
         Assert.Equal(["-f", "-"], call.Args);
         // "table" creates the table when it doesn't exist yet, so the following "delete" can't fail on a first run:
@@ -129,7 +98,7 @@ public class NftManagerTests
 
         await nft.RemoveAsync();
 
-        Call call = Assert.Single(runner.Calls);
+        RunnerCall call = Assert.Single(runner.Calls);
         Assert.Equal("nft", call.File);
         Assert.Equal(["delete", "table", "inet", "tgwsone"], call.Args);
         Assert.Null(call.Stdin);

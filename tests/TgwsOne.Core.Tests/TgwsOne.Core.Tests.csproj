@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\TgwsOne.Core\TgwsOne.Core.csproj" />
     <ProjectReference Include="..\..\src\TgwsOne\TgwsOne.csproj" />
     <ProjectReference Include="..\FakeEngine\FakeEngine.csproj" />
+    <ProjectReference Include="..\FakeZapret\FakeZapret.csproj" />
   </ItemGroup>
 
   <ItemGroup>
