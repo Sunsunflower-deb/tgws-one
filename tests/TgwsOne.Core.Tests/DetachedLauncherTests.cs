@@ -90,7 +90,7 @@ public class DetachedLauncherTests : IDisposable
     {
         _env.Set("FAKE_MODE", "nolisten");
         using Process p = Launch();
-        var rec = new EngineRecord(p.Id, p.StartTime.ToUniversalTime(), TestEnv.FakeEnginePath, "h");
+        var rec = EngineRecord.ForProcess(p, TestEnv.FakeEnginePath, "h");
 
         // Alive means: this PID, this start time and this executable. If the launcher forked an intermediate
         // process, the PID from Process.Start would be that of sh/setsid and this would never become true.

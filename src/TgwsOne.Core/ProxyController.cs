@@ -140,10 +140,14 @@ public sealed class ProxyController
         }
         _child = p;
 
-        DateTime startedUtc;
-        try { startedUtc = p.StartTime.ToUniversalTime(); }
-        catch (InvalidOperationException) { startedUtc = DateTime.UtcNow; }   // it exited before we could ask
-        new EngineRecord(p.Id, startedUtc, _paths.Engine, EngineCommand.Hash(argv)).Write(_paths.PidFile);
+        try
+        {
+            EngineRecord.ForProcess(p, _paths.Engine, EngineCommand.Hash(argv)).Write(_paths.PidFile);
+        }
+        catch (InvalidOperationException)
+        {
+            // It exited before its start stamp could be read: nothing to record, the loop below reports the exit.
+        }
         _log.Write("движок запущен, PID " + p.Id);
 
         // 6. Wait until it accepts connections, dies, or the timeout passes.

@@ -7,6 +7,11 @@ namespace TgwsOne.Core.Tests;
 [Collection(EnvCollection.Name)]
 public class ProxyControllerTests : IDisposable
 {
+    // A start stamp that matches no real process (an unknown boot, or no such time).
+    private static readonly string StaleStamp = OperatingSystem.IsLinux()
+        ? "proc:00000000-0000-0000-0000-000000000000:1"
+        : "time:1";
+
     private readonly TestEnv _env = new();
 
     public void Dispose() => _env.Dispose();
@@ -209,7 +214,7 @@ public class ProxyControllerTests : IDisposable
     public async Task Start_StaleRecord_IsReplaced()
     {
         Configure();
-        new EngineRecord(2_000_000_000, DateTime.UtcNow.AddDays(-1), Paths.Engine, "old").Write(Paths.PidFile);
+        new EngineRecord(2_000_000_000, StaleStamp, Paths.Engine, "old").Write(Paths.PidFile);
 
         StartResult r = await NewController().StartAsync();
 
@@ -235,6 +240,8 @@ public class ProxyControllerTests : IDisposable
         EngineRecord rec = EngineRecord.Read(Paths.PidFile)!;
         Assert.Equal(EngineCommand.Hash(expected), rec.ArgvHash);
         Assert.Equal(Paths.Engine, rec.ExePath);
+        Assert.Equal(EngineRecord.CurrentStamp(rec.Pid), rec.StartStamp);   // the engine's own start stamp
+        Assert.True(rec.IsAlive());
     }
 
     [Fact]
@@ -257,11 +264,29 @@ public class ProxyControllerTests : IDisposable
     [Fact]
     public async Task Stop_StaleRecord_NotRunning()
     {
-        new EngineRecord(2_000_000_000, DateTime.UtcNow, Paths.Engine, "h").Write(Paths.PidFile);
+        new EngineRecord(2_000_000_000, StaleStamp, Paths.Engine, "h").Write(Paths.PidFile);
 
         StopOutcome r = await NewController().StopAsync();
 
         Assert.Equal(StopOutcome.NotRunning, r);
+        Assert.False(File.Exists(Paths.PidFile));
+    }
+
+    [Fact]
+    public async Task Stop_DoesNotKillAProcessThatOnlyReusesTheRecordedPid()
+    {
+        // A foreign process that runs the very same executable and now holds the PID the record names,
+        // as after a reboot or a PID wrap. It must read as "not ours" and survive a stop.
+        _env.Set("FAKE_MODE", "nolisten");
+        using Process stranger = DetachedLauncher.Start(Paths.Engine, [], _env.Scratch("c.log"), AppContext.BaseDirectory);
+        Assert.True(TestEnv.WaitFor(() => EngineRecord.ForProcess(stranger, Paths.Engine, "h").IsAlive()));
+        new EngineRecord(stranger.Id, StaleStamp, Paths.Engine, "h").Write(Paths.PidFile);
+        var c = NewController();
+
+        Assert.False(c.GetStatus().Running);
+        Assert.Equal(StopOutcome.NotRunning, await c.StopAsync());
+
+        Assert.False(stranger.HasExited, "StopAsync killed a process that was not ours");
         Assert.False(File.Exists(Paths.PidFile));
     }
 

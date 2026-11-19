@@ -126,7 +126,7 @@ public class PrivateDirectoryTests
     {
         if (OperatingSystem.IsWindows()) return;
         using var tmp = new TempDir();
-        var rec = new EngineRecord(1, DateTime.UtcNow, "/x", "h");
+        var rec = new EngineRecord(1, "time:1", "/x", "h");
 
         rec.Write(tmp.Combine("fresh", "engine.pid"));
         Assert.Equal(Private, Mode(tmp.Combine("fresh")));
