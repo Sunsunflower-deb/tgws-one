@@ -465,6 +465,45 @@ public class ZapretServiceTests : IDisposable
         Assert.False(File.Exists(rig.Paths.AutoStateFile));
     }
 
+    // A state file that cannot be written: a directory sits where state.ini should be.
+    private static void BreakStateFile(ServicePaths paths)
+    {
+        File.Delete(paths.StateIni);
+        Directory.CreateDirectory(paths.StateIni);
+    }
+
+    [LinuxFact]
+    public async Task On_WhenTheStateCannotBeSaved_SaysSo_AndTheOldStateStays()
+    {
+        await using ServiceRig rig = await ServiceRig.StartAsync(_env, beforeStart: p => new ServiceState(false, "auto").Save(p.StateIni));
+        BreakStateFile(rig.Paths);
+
+        ControlResponse r = await rig.Send("on");
+
+        Assert.False(r.Ok);
+        Assert.StartsWith("не удалось сохранить состояние", r.Error);
+        Assert.False(r.Status!.Enabled);       // memory did not run ahead of the disk
+        Assert.Null(rig.Runner.Pid);           // and nothing was started
+        Assert.False((await rig.Send("status")).Status!.Enabled);
+    }
+
+    [LinuxFact]
+    public async Task Use_WhenTheStateCannotBeSaved_PutsTheRememberedStrategyBack()
+    {
+        await using ServiceRig rig = await ServiceRig.StartAsync(_env);
+        Assert.True(WaitFor(() => _env.Args.SequenceEqual(rig.ExpectedArgv("auto"))));
+        BreakStateFile(rig.Paths);
+
+        ControlResponse r = await rig.Send("use", "split");
+
+        Assert.False(r.Ok);
+        Assert.StartsWith("не удалось сохранить состояние", r.Error);
+        Assert.Equal("auto", r.Status!.Strategy);
+        Assert.Equal("running", r.Status.State);
+        // What runs is what the state says: the new command line was replaced by the remembered one again.
+        Assert.True(WaitFor(() => _env.Args.SequenceEqual(rig.ExpectedArgv("auto"))), string.Join('|', _env.Args));
+    }
+
     [LinuxFact]
     public async Task Dispose_StopsTheChild()
     {

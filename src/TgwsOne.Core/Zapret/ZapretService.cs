@@ -54,8 +54,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
         if (BuildArgv(_state.Strategy).Argv == null)
         {
             _log.Write($"служба: сохранённая стратегия {_state.Strategy} недоступна, используется {BuiltInStrategies.Auto}");
-            _state = _state with { Strategy = BuiltInStrategies.Auto };
-            TrySave(out _);
+            TrySave(_state with { Strategy = BuiltInStrategies.Auto }, out _);
         }
         string? error = await ApplyStateAsync(ct);
         if (error != null) _log.Write($"служба: запуск не удался: {error}");
@@ -91,8 +90,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
     {
         // Already up (or on its way, or backing off): nothing to do. Only a failed or stopped run is started again.
         bool active = _runner.State is RunnerState.Starting or RunnerState.Running or RunnerState.Backoff;
-        _state = _state with { Enabled = true };
-        if (!TrySave(out string? saveError)) return Fail(saveError);
+        if (!TrySave(_state with { Enabled = true }, out string? saveError)) return Fail(saveError);
         if (active) return Ok();
 
         string? error = await ApplyStateAsync(ct);
@@ -101,8 +99,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
 
     private async Task<ControlResponse> OffAsync()
     {
-        _state = _state with { Enabled = false };
-        if (!TrySave(out string? saveError)) return Fail(saveError);
+        if (!TrySave(_state with { Enabled = false }, out string? saveError)) return Fail(saveError);
         await _runner.StopAsync();
         _applyError = null;
         _log.Write("служба: выключено");
@@ -123,8 +120,13 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
             ClearAutoState();
         }
 
-        _state = _state with { Strategy = id };
-        if (!TrySave(out string? saveError)) return Fail(saveError);
+        if (!TrySave(_state with { Strategy = id }, out string? saveError))
+        {
+            // The new strategy is already running but couldn't be remembered: go back to the remembered one, so what
+            // runs and what the state says stay the same thing.
+            if (_state.Enabled) await ApplyStateAsync(ct);
+            return Fail(saveError);
+        }
         _log.Write($"служба: стратегия {id}");
         return Ok();
     }
@@ -226,11 +228,13 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
             _runner.Restarts, lastError, _bundle.Version, auto);
     }
 
-    private bool TrySave([NotNullWhen(false)] out string? error)
+    // The in-memory state changes only once it is on disk, so the two never disagree about what was asked for.
+    private bool TrySave(ServiceState next, [NotNullWhen(false)] out string? error)
     {
         try
         {
-            _state.Save(_paths.StateIni);
+            next.Save(_paths.StateIni);
+            _state = next;
             error = null;
             return true;
         }

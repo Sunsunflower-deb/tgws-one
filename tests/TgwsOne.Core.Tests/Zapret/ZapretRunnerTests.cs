@@ -145,6 +145,36 @@ public class ZapretRunnerTests : IDisposable
     }
 
     [LinuxFact]
+    public async Task Apply_Success_ClearsTheMessageFromAnEarlierCrash()
+    {
+        await using ZapretRunner runner = _env.NewRunner();
+        _env.WriteCtl("crash_after_ms=500");
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+        _env.WriteCtl();
+        Assert.True(WaitFor(() => runner.Restarts >= 1 && runner.State == RunnerState.Running), $"state {runner.State}");
+        Assert.NotNull(runner.LastError);   // the supervisor's own recovery keeps the last crash on record
+
+        Assert.Null(await runner.ApplyAsync(["--b"]));
+
+        Assert.Null(runner.LastError);      // a deliberate, successful start does not
+    }
+
+    [LinuxFact]
+    public async Task Apply_CancelledDuringTheStartupGrace_Throws_InsteadOfReportingSuccess()
+    {
+        var policy = FakeZapretEnv.FastPolicy with { StartupGrace = TimeSpan.FromSeconds(4) };
+        await using ZapretRunner runner = _env.NewRunner(policy: policy);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));   // after the dry run and the spawn
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.ApplyAsync(["--a"], cts.Token));
+
+        Assert.NotEqual(RunnerState.Running, runner.State);   // the grace period had not passed
+        await runner.StopAsync();                              // and what was started is cleaned up the normal way
+        Assert.Equal(RunnerState.Disabled, runner.State);
+        Assert.Null(runner.Pid);
+    }
+
+    [LinuxFact]
     public async Task Stop_KillsChild_StateDisabled()
     {
         await using ZapretRunner runner = _env.NewRunner();

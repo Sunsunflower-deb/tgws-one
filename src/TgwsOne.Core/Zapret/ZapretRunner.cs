@@ -128,7 +128,11 @@ public sealed class ZapretRunner : IAsyncDisposable
             _crashTimes.Clear();
 
             string? failure = await LaunchAsync(argv, linked.Token);
-            if (failure == null) return null;
+            if (failure == null)
+            {
+                _lastError = null;   // a deliberate start that worked: the message from an earlier crash no longer applies
+                return null;
+            }
 
             _log.Write($"zapret: не запустился: {failure}");
             if (previous != null)
@@ -267,6 +271,8 @@ public sealed class ZapretRunner : IAsyncDisposable
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task winner = await Task.WhenAny(child.Exited, Task.Delay(_policy.Grace, cts.Token));
         await cts.CancelAsync();
+        // A cancelled wait also "completes": that is the service stopping, not the grace period passing.
+        ct.ThrowIfCancellationRequested();
         if (winner != child.Exited)
         {
             _state = RunnerState.Running;
