@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TgwsOne.Core/TgwsOne.Core.csproj" />
+    <Project Path="src/TgwsOne/TgwsOne.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FakeEngine/FakeEngine.csproj" />
+    <Project Path="tests/TgwsOne.Core.Tests/TgwsOne.Core.Tests.csproj" />
+  </Folder>
+</Solution>

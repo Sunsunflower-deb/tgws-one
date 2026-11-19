@@ -4,6 +4,7 @@ dist/
 obj/
 bin/
 stage/
+out/
 *.msi
 *.wixpdb
 *.wixobj

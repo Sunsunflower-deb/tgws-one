@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>TgwsOne</RootNamespace>
+    <AssemblyName>TgwsOne</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+    <AssemblyName>tgwsone</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TgwsOne.Core\TgwsOne.Core.csproj" />
+  </ItemGroup>
+
+</Project>
