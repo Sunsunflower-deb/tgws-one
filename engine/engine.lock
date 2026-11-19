@@ -1,0 +1,19 @@
+# Pinned inputs of the headless tg-ws-proxy engine build (build-engine.sh, build-engine.ps1).
+# Plain KEY=value lines: sourced by bash and parsed by PowerShell.
+#
+# The engine is upstream's CLI (proxy/tg_ws_proxy.py), built with PyInstaller from this exact commit.
+UPSTREAM_REPO=Flowseal/tg-ws-proxy
+UPSTREAM_TAG=v1.11.4
+UPSTREAM_COMMIT=2085861957070eeea07990a522b29f42e5230210
+
+# sha256 of https://github.com/$UPSTREAM_REPO/archive/$UPSTREAM_COMMIT.tar.gz
+# Trust on first use: an empty value makes the build print the computed hash and stop; record it here after
+# looking at it. Every later build verifies the download against it.
+UPSTREAM_SHA256=aa4b82f8bf78957e4ff698fd71e1cf8cbd57f4bba420137ad6b59858f87340b0
+
+PYTHON=3.12
+
+# Only what the headless engine imports. The tray GUI libraries upstream also lists (customtkinter, pystray,
+# Pillow, psutil, pyperclip) are not needed and are excluded from the bundle.
+# Transitive dependencies (h2, hpack, httpcore, ...) are resolved at build time.
+PIP_PINS="cryptography==46.0.5 httpx[http2]==0.28.1 certifi==2026.10.23 pyinstaller==6.22.3"

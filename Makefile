@@ -3,7 +3,10 @@ DESTDIR ?=
 RID_LINUX := linux-x64
 PUB := out/publish
 
-.PHONY: build build-win test run clean
+.PHONY: engine build build-win test test-engine run clean
+
+engine:
+	engine/build-engine.sh
 
 build:
 	dotnet publish src/TgwsOne -c Release -r $(RID_LINUX) --self-contained -p:PublishSingleFile=true -o $(PUB)/$(RID_LINUX)
@@ -13,6 +16,9 @@ build-win:
 
 test:
 	dotnet test tests/TgwsOne.Core.Tests
+
+test-engine:
+	TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine dotnet test tests/TgwsOne.Core.Tests --filter "FullyQualifiedName~RealEngine"
 
 run:
 	$(PUB)/$(RID_LINUX)/tgwsone $(ARGS)
