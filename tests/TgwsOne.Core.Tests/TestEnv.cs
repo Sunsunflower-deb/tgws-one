@@ -28,7 +28,7 @@ public sealed class TestEnv : IDisposable
         Set("TGWS_DATA_DIR", DataDir);
         Set("TGWS_ENGINE", FakeEnginePath);
         // A previous test's FAKE_* settings must not leak in.
-        foreach (string name in new[] { "FAKE_MODE", "FAKE_ARGS_FILE", "FAKE_CHILD_PID_FILE" }) Set(name, null);
+        foreach (string name in new[] { "FAKE_MODE", "FAKE_ARGS_FILE", "FAKE_CHILD_PID_FILE", "FAKE_OUTPUT_LINES" }) Set(name, null);
     }
 
     public string DataDir { get; }

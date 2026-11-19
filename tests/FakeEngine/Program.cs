@@ -2,6 +2,7 @@
 // (the controller passes its own environment on to the engine it starts):
 //   FAKE_ARGS_FILE        write argv, one argument per line, to this file
 //   FAKE_MODE             listen (default) | exit:N | nolisten | child
+//   FAKE_OUTPUT_LINES     exit mode: print this many "line i" lines to stderr before the fatal message
 //   FAKE_CHILD_PID_FILE   child mode: the child's PID is written here
 using System.Diagnostics;
 using System.Net;
@@ -22,6 +23,8 @@ string mode = Environment.GetEnvironmentVariable("FAKE_MODE") ?? "listen";
 
 if (mode.StartsWith("exit:", StringComparison.Ordinal))
 {
+    int noise = int.Parse(Environment.GetEnvironmentVariable("FAKE_OUTPUT_LINES") ?? "0");
+    for (int i = 1; i <= noise; i++) Console.Error.WriteLine($"line {i}");
     Console.Error.WriteLine("fake fatal: boom");
     return int.Parse(mode["exit:".Length..]);
 }

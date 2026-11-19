@@ -41,17 +41,30 @@ public static class PortProbe
 
     /// <summary>True if a TCP connection to the address succeeds within the timeout. Blocks for at most that long.</summary>
     public static bool CanConnect(IPAddress address, int port, int timeoutMs)
+        => CanConnectAsync(address, port, timeoutMs).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Async form of <see cref="CanConnect"/>. Only <paramref name="ct"/> can make it throw; a refused,
+    /// unreachable or timed-out connection is simply <c>false</c>.
+    /// </summary>
+    public static async Task<bool> CanConnectAsync(IPAddress address, int port, int timeoutMs, CancellationToken ct = default)
     {
         try
         {
             using var client = new TcpClient(address.AddressFamily);
-            using var cts = new CancellationTokenSource(timeoutMs);
-            client.ConnectAsync(address, port, cts.Token).AsTask().GetAwaiter().GetResult();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(timeoutMs);
+            // ConfigureAwait(false): the sync wrapper above must not deadlock on a UI synchronization context.
+            await client.ConnectAsync(address, port, cts.Token).ConfigureAwait(false);
             return client.Connected;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
-            return false;   // refused, unreachable or timed out
+            return false;
         }
     }
 }
