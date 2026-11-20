@@ -9,13 +9,17 @@ internal sealed class BypassRig : IAsyncDisposable
     public FakeBypassService Service { get; } = new();
     public FakeProxyControl Proxy { get; } = new();
     public FakeNetInfo Net { get; } = new();
+    public FakeDialogs Dialogs { get; } = new();
+    public FakeProbes Probes { get; }
     public StatusMonitor Monitor { get; }
     public BypassViewModel Bypass { get; }
 
     public BypassRig()
     {
+        Probes = new FakeProbes(Service);
         Monitor = new StatusMonitor(Proxy, Service, Net, TimeSpan.FromHours(1));
-        Bypass = new BypassViewModel(Service, Monitor);
+        Bypass = new BypassViewModel(Service, Monitor, Dialogs,
+            () => new FinderViewModel(new StrategyFinder(Service, Probes, Probes, (_, _) => Task.CompletedTask)));
     }
 
     /// <summary>The page as the user finds it: the monitor has polled and the page has loaded its lists.</summary>

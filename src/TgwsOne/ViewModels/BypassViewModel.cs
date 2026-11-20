@@ -39,10 +39,12 @@ internal sealed partial class BypassViewModel : PageViewModel
 
     private readonly IControlClient _control;
     private readonly StatusMonitor _monitor;
+    private readonly IDialogService _dialogs;
+    private readonly Func<FinderViewModel> _createFinder;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChange))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand))]
     private bool _serviceReachable;
 
     [ObservableProperty] private bool _bypassOn;
@@ -62,17 +64,20 @@ internal sealed partial class BypassViewModel : PageViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChange))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand))]
     private bool _isBusy;
 
     private IReadOnlyList<string> _hosts = [];
     private IReadOnlyList<string> _ips = [];
 
-    public BypassViewModel(IControlClient control, StatusMonitor monitor)
+    /// <param name="createFinder">A fresh finder for every run of «Подобрать лучшую…».</param>
+    public BypassViewModel(IControlClient control, StatusMonitor monitor, IDialogService dialogs, Func<FinderViewModel> createFinder)
         : base(AppPageInfo.Title(AppPage.Bypass), AppPageInfo.Icon(AppPage.Bypass))
     {
         _control = control;
         _monitor = monitor;
+        _dialogs = dialogs;
+        _createFinder = createFinder;
         Apply(monitor.Current);
         monitor.Changed += Apply;
     }
@@ -158,6 +163,27 @@ internal sealed partial class BypassViewModel : PageViewModel
 
         await Run(() => _control.SendAsync(new ControlRequest(ControlCommands.Use, Strategy: option.Id)));
         foreach (StrategyOption o in Strategies) o.Resync();   // refused or not, the screen shows what the service now has
+    }
+
+    /// <summary>
+    /// «Подобрать лучшую…»: opens the finder, which switches strategies on the real bypass while it runs. The page stays as it was
+    /// behind it (a busy page ignores the snapshots that show the strategy changing) and catches up when the window closes.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanAct))]
+    private async Task FindBestAsync()
+    {
+        IsBusy = true;
+        ErrorText = null;
+        try
+        {
+            await _dialogs.ShowFinderAsync(_createFinder());
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+        await _monitor.RefreshNowAsync();
+        Apply(_monitor.Current);
     }
 
     /// <summary>Sends one command, shows the service's refusal (if any), and brings the page in line with what the service reports afterwards.</summary>

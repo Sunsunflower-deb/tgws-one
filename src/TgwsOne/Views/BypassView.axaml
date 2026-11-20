@@ -51,6 +51,8 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+            <Button x:Name="FindBestButton" Content="Подобрать лучшую…" HorizontalAlignment="Left"
+                    Command="{Binding FindBestCommand}" />
             <TextBlock x:Name="ErrorTextBlock" Foreground="{DynamicResource ToneRed}" TextWrapping="Wrap"
                        Text="{Binding ErrorText}"
                        IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />

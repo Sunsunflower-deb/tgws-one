@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using TgwsOne.Core;
+using TgwsOne.ViewModels;
 
 namespace TgwsOne.Services;
 
@@ -77,4 +78,7 @@ internal interface IDialogService
 {
     /// <returns>True when the user chose <paramref name="accept"/>.</returns>
     Task<bool> ConfirmAsync(string title, string message, string accept, string cancel);
+
+    /// <summary>Shows the strategy finder over the main window; returns when its window is closed.</summary>
+    Task ShowFinderAsync(FinderViewModel finder);
 }

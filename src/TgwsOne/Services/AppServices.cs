@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using TgwsOne.Core;
 using TgwsOne.Core.Zapret;
+using TgwsOne.ViewModels;
 
 namespace TgwsOne.Services;
 
@@ -42,6 +43,17 @@ internal sealed class AppServices : IAsyncDisposable
         var monitor = new StatusMonitor(proxy, control, new SystemNetInfo());
         return new AppServices(paths, log, proxy, control, monitor, new IniAppSettings(paths, log), new ShellLauncher(),
                                new AvaloniaClipboardService(owner), new AvaloniaDialogService(owner));
+    }
+
+    /// <summary>A strategy finder with the real network probes (scripted ones when the dev switch says so); a new one for each run.</summary>
+    public FinderViewModel CreateFinder()
+    {
+        if (Environment.GetEnvironmentVariable(ScriptedProbes.Variable) == "1")
+        {
+            var scripted = new ScriptedProbes(Control);
+            return new FinderViewModel(new StrategyFinder(Control, scripted, scripted));
+        }
+        return new FinderViewModel(new StrategyFinder(Control, new SslTlsProbe(), new HttpDownloadProbe()));
     }
 
     public ValueTask DisposeAsync() => Monitor.DisposeAsync();

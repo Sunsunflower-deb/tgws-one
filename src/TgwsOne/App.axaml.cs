@@ -38,7 +38,7 @@ internal sealed partial class App : Application
     private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
     [
         new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav),
-        new BypassViewModel(s.Control, s.Monitor),
+        new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder),
         MainWindowViewModel.Placeholder(AppPage.Diagnostics),
         MainWindowViewModel.Placeholder(AppPage.Logs),
         MainWindowViewModel.Placeholder(AppPage.Settings),

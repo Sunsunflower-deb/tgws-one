@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using TgwsOne.ViewModels;
 using TgwsOne.Views;
 
 namespace TgwsOne.Services;
@@ -12,6 +13,12 @@ internal sealed class AvaloniaDialogService(Func<Window?> owner) : IDialogServic
         if (owner() is not { } window) return false;
         var dialog = new ConfirmDialog(title, message, accept, cancel);
         return await dialog.ShowDialog<bool>(window);
+    }
+
+    public async Task ShowFinderAsync(FinderViewModel finder)
+    {
+        if (owner() is not { } window) return;
+        await new FinderDialog { DataContext = finder }.ShowDialog(window);
     }
 }
 

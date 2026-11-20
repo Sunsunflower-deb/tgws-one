@@ -162,6 +162,17 @@ internal sealed class FakeDialogs : IDialogService
         Asked.Add(title);
         return Task.FromResult(Answers.Count == 0 || Answers.Dequeue());
     }
+
+    /// <summary>What a test does while the finder window is "open" (default: nothing, it closes at once).</summary>
+    public Func<TgwsOne.ViewModels.FinderViewModel, Task>? WhileFinderOpen { get; set; }
+
+    public int FindersShown { get; private set; }
+
+    public async Task ShowFinderAsync(TgwsOne.ViewModels.FinderViewModel finder)
+    {
+        FindersShown++;
+        if (WhileFinderOpen is { } work) await work(finder);
+    }
 }
 
 internal sealed class FakeNavigator : TgwsOne.ViewModels.INavigator
