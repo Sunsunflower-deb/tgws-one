@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using TgwsOne.Services;
 
 namespace TgwsOne.Views;
 
@@ -16,12 +17,25 @@ internal sealed class Icon : Control
     public static readonly StyledProperty<string?> DataProperty = AvaloniaProperty.Register<Icon, string?>(nameof(Data));
     public static readonly StyledProperty<double> StrokeWidthProperty = AvaloniaProperty.Register<Icon, double>(nameof(StrokeWidth), 2.0);
     public static readonly StyledProperty<IBrush?> ForegroundProperty = TextElement.ForegroundProperty.AddOwner<Icon>();
+    public static readonly StyledProperty<Tone?> ToneProperty = AvaloniaProperty.Register<Icon, Tone?>(nameof(Tone));
 
     private Geometry? _geometry;
 
     static Icon()
     {
-        AffectsRender<Icon>(DataProperty, StrokeWidthProperty, ForegroundProperty);
+        AffectsRender<Icon>(DataProperty, StrokeWidthProperty, ForegroundProperty, ToneProperty);
+    }
+
+    public Icon()
+    {
+        ActualThemeVariantChanged += (_, _) => InvalidateVisual();   // a tone's brush differs per theme
+    }
+
+    /// <summary>When set, the icon is drawn in this status colour instead of the inherited foreground.</summary>
+    public Tone? Tone
+    {
+        get => GetValue(ToneProperty);
+        set => SetValue(ToneProperty, value);
     }
 
     /// <summary>SVG path data on a 24×24 grid.</summary>
@@ -52,7 +66,8 @@ internal sealed class Icon : Control
 
     public override void Render(DrawingContext context)
     {
-        if (string.IsNullOrEmpty(Data) || Foreground is not { } brush) return;
+        IBrush? brush = Tone is { } tone ? ToneBrushes.Find(this, tone) : Foreground;
+        if (string.IsNullOrEmpty(Data) || brush is null) return;
         _geometry ??= Geometry.Parse(Data);
 
         double scale = Math.Min(Bounds.Width, Bounds.Height) / Grid;

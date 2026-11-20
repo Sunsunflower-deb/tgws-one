@@ -12,6 +12,9 @@
         WindowStartupLocation="CenterScreen">
 
   <Window.DataTemplates>
+    <DataTemplate DataType="vm:HomeViewModel">
+      <v:HomeView />
+    </DataTemplate>
     <DataTemplate DataType="vm:PlaceholderPageViewModel">
       <StackPanel Margin="32" Spacing="8">
         <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold" />

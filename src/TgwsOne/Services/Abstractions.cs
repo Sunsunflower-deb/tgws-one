@@ -47,3 +47,34 @@ internal sealed class SystemClock : IClock
 {
     public DateTimeOffset Now => DateTimeOffset.Now;
 }
+
+/// <summary>The user's settings file as the pages need it. Every call reads the file afresh: a start that had to switch ports rewrites it behind our back.</summary>
+internal interface IAppSettings
+{
+    /// <summary>The proxy settings as they are on disk now (defaults where a value is missing or wrong); never throws.</summary>
+    ProxySettings Load();
+
+    /// <summary>The <c>tg://proxy</c> link for Telegram on this machine; makes the secret first if there is none yet.</summary>
+    string TelegramLink();
+
+    /// <summary>Replaces the secret with a new random one and saves it. The running proxy keeps the old one until it is restarted.</summary>
+    void ReplaceSecret();
+}
+
+/// <summary>Opens a URL in whatever the system uses for it (Telegram for <c>tg://</c>).</summary>
+internal interface ILauncher
+{
+    /// <returns>False when nothing could be started for the URL.</returns>
+    Task<bool> OpenAsync(string url);
+}
+
+internal interface IClipboardService
+{
+    Task SetTextAsync(string text);
+}
+
+internal interface IDialogService
+{
+    /// <returns>True when the user chose <paramref name="accept"/>.</returns>
+    Task<bool> ConfirmAsync(string title, string message, string accept, string cancel);
+}

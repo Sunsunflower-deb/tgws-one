@@ -1,19 +1,23 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using TgwsOne.Views;
 
 namespace TgwsOne.ViewModels;
 
 /// <summary>The window: the sidebar's pages in order and the one shown.</summary>
-internal sealed partial class MainWindowViewModel : ObservableObject
+internal sealed partial class MainWindowViewModel : ObservableObject, INavigator
 {
     [ObservableProperty]
     private PageViewModel _selectedPage;
 
-    public MainWindowViewModel(IReadOnlyList<PageViewModel> pages)
+    /// <summary>The pages are built by <paramref name="createPages"/>, which is handed the navigator (this window) for those that move around.</summary>
+    public MainWindowViewModel(Func<INavigator, IReadOnlyList<PageViewModel>> createPages)
     {
-        ArgumentOutOfRangeException.ThrowIfZero(pages.Count);
-        Pages = pages;
-        _selectedPage = pages[0];
+        Pages = createPages(this);
+        ArgumentOutOfRangeException.ThrowIfNotEqual(Pages.Count, Enum.GetValues<AppPage>().Length);
+        _selectedPage = Pages[0];
+    }
+
+    public MainWindowViewModel(IReadOnlyList<PageViewModel> pages) : this(_ => pages)
+    {
     }
 
     public IReadOnlyList<PageViewModel> Pages { get; }
@@ -21,13 +25,11 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>Moves to <paramref name="page"/> (one of <see cref="Pages"/>).</summary>
     public void Navigate(PageViewModel page) => SelectedPage = page;
 
-    /// <summary>The five pages of the spec, every one a placeholder for now.</summary>
-    public static MainWindowViewModel CreateShell() => new(
-    [
-        new PlaceholderPageViewModel("Главная", IconPaths.Home),
-        new PlaceholderPageViewModel("Обход DPI", IconPaths.Shield),
-        new PlaceholderPageViewModel("Диагностика", IconPaths.Activity),
-        new PlaceholderPageViewModel("Журналы", IconPaths.List),
-        new PlaceholderPageViewModel("Настройки", IconPaths.Sliders),
-    ]);
+    public void Show(AppPage page, bool startCheck = false) => SelectedPage = Pages[(int)page];
+
+    /// <summary>A stand-in for a page that has not been built yet.</summary>
+    public static PageViewModel Placeholder(AppPage page) => new PlaceholderPageViewModel(AppPageInfo.Title(page), AppPageInfo.Icon(page));
+
+    /// <summary>The five pages of the spec, every one a placeholder.</summary>
+    public static MainWindowViewModel CreateShell() => new([.. Enum.GetValues<AppPage>().Select(Placeholder)]);
 }

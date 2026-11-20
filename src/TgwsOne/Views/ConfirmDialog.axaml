@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TgwsOne.Views.ConfirmDialog"
+        Width="440"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBackground}">
+  <StackPanel Margin="24" Spacing="22">
+    <TextBlock x:Name="MessageText" TextWrapping="Wrap" LineHeight="20" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="CancelButton" IsCancel="True" MinWidth="96" Click="OnCancel" />
+      <Button x:Name="AcceptButton" IsDefault="True" Classes="accent" MinWidth="96" Click="OnAccept" />
+    </StackPanel>
+  </StackPanel>
+</Window>

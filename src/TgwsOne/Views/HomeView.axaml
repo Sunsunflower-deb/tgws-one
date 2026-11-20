@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.ViewModels"
+             xmlns:v="using:TgwsOne.Views"
+             x:Class="TgwsOne.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="720">
+
+      <!-- The headline: is Telegram working? -->
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <v:StatusDot Tone="{Binding HeadlineTone}" Width="14" Height="14" VerticalAlignment="Center" />
+        <TextBlock x:Name="HeadlineText" Text="{Binding Headline}" FontSize="22" FontWeight="SemiBold"
+                   TextWrapping="Wrap" VerticalAlignment="Center" />
+      </StackPanel>
+
+      <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsBusy}" />
+
+      <!-- What happened and what to do about it. -->
+      <Border x:Name="BannerPanel" Classes="card" Padding="12,10"
+              IsVisible="{Binding Banner, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <v:Icon Grid.Column="0" Data="{Binding Banner.IconPath}" Tone="{Binding Banner.Tone}"
+                  Width="20" Height="20" Margin="0,0,12,0" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" x:Name="BannerText" Text="{Binding Banner.Text}"
+                     TextWrapping="Wrap" VerticalAlignment="Center" />
+          <Button Grid.Column="2" x:Name="BannerActionButton" Margin="12,0,0,0" VerticalAlignment="Center"
+                  Content="{Binding Banner.ActionText}" IsVisible="{Binding Banner.HasAction}"
+                  Command="{Binding RunBannerActionCommand}" />
+          <Button Grid.Column="3" Classes="plain" Margin="8,0,0,0" Padding="6" VerticalAlignment="Center"
+                  HorizontalAlignment="Right" Command="{Binding DismissBannerCommand}"
+                  AutomationProperties.Name="Закрыть сообщение">
+            <v:Icon Data="{x:Static v:IconPaths.Close}" Width="14" Height="14" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <!-- The user's proxy. -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="caption" Text="Прокси" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <v:StatusDot Tone="{Binding ProxyTone}" Width="10" Height="10" VerticalAlignment="Center" />
+            <TextBlock x:Name="ProxyText" Text="{Binding ProxyLine}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="ConnectButton" Classes="accent" Content="Подключить" FontSize="15"
+                    Padding="32,10" Command="{Binding ConnectCommand}"
+                    IsVisible="{Binding !IsProxyRunning}" />
+            <Button x:Name="DisconnectButton" Content="Отключить" Padding="20,8"
+                    Command="{Binding DisconnectCommand}" IsVisible="{Binding IsProxyRunning}" />
+            <Button x:Name="TelegramButton" Padding="16,8" Command="{Binding OpenInTelegramCommand}"
+                    IsVisible="{Binding IsProxyRunning}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <v:Icon Data="{x:Static v:IconPaths.Send}" Width="16" Height="16" VerticalAlignment="Center" />
+                <TextBlock Text="Открыть в Telegram" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="MoreButton" Padding="10,8" AutomationProperties.Name="Дополнительно">
+              <v:Icon Data="{x:Static v:IconPaths.More}" StrokeWidth="3" Width="18" Height="18" />
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                  <MenuItem Header="Копировать ссылку" Command="{Binding CopyLinkCommand}">
+                    <MenuItem.Icon>
+                      <v:Icon Data="{x:Static v:IconPaths.Copy}" Width="16" Height="16" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="Новый секрет…" Command="{Binding NewSecretCommand}">
+                    <MenuItem.Icon>
+                      <v:Icon Data="{x:Static v:IconPaths.Key}" Width="16" Height="16" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </StackPanel>
+
+          <TextBlock x:Name="NoticeText" Classes="caption" Text="{Binding Notice}"
+                     IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- The machine-wide bypass: a click opens its page (which also explains a missing service). -->
+      <Button x:Name="BypassRow" Classes="plain" Command="{Binding OpenBypassCommand}">
+        <Border Classes="card">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="caption" Text="Обход DPI" />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <v:StatusDot Tone="{Binding BypassTone}" Width="10" Height="10" VerticalAlignment="Center" />
+                <TextBlock x:Name="BypassText" Text="{Binding BypassLine}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              </StackPanel>
+            </StackPanel>
+            <v:Icon x:Name="BypassChevron" Grid.Column="1" Data="{x:Static v:IconPaths.Chevron}" Width="18" Height="18"
+                    VerticalAlignment="Center" IsVisible="{Binding BypassOpensPage}" />
+          </Grid>
+        </Border>
+      </Button>
+
+      <Button x:Name="CheckButton" Content="Проверить соединение" Padding="20,8"
+              Command="{Binding CheckConnectionCommand}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

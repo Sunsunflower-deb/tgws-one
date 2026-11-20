@@ -1,7 +1,9 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
+using TgwsOne.Services;
 using TgwsOne.ViewModels;
 using TgwsOne.Views;
 
@@ -24,8 +26,21 @@ internal sealed partial class App : Application
         };
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow { DataContext = MainWindowViewModel.CreateShell() };
+        {
+            AppServices services = AppServices.Create(() => desktop.MainWindow);
+            desktop.MainWindow = new MainWindow { DataContext = CreateMainViewModel(services) };
+            desktop.Exit += (_, _) => services.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
+    [
+        new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav),
+        MainWindowViewModel.Placeholder(AppPage.Bypass),
+        MainWindowViewModel.Placeholder(AppPage.Diagnostics),
+        MainWindowViewModel.Placeholder(AppPage.Logs),
+        MainWindowViewModel.Placeholder(AppPage.Settings),
+    ]);
 }
