@@ -25,6 +25,7 @@ internal static class TgwsOneProcess
         foreach (string a in args) psi.ArgumentList.Add(a);
         psi.Environment.Remove("DISPLAY");
         psi.Environment.Remove("WAYLAND_DISPLAY");
+        psi.Environment.Remove("DBUS_SESSION_BUS_ADDRESS");   // no notifications or tray icon on the real desktop either
         return psi;
     }
 }

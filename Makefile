@@ -43,9 +43,10 @@ build-win:
 	cp -a out/zapret2/win-x64 $(PUB)/win-x64/zapret2
 	mkdir -p $(PUB)/win-x64/lists && cp lists/*.txt $(PUB)/win-x64/lists/
 
-# Tests never get a display: the app opens its window when started without a switch, and a test run must not be able to
-# put one on the desktop of whoever runs it (the UI tests are headless, the cross-process ones pass explicit switches).
-NO_DISPLAY := env -u DISPLAY -u WAYLAND_DISPLAY
+# Tests never get a display or the session bus: the app opens its window when started without a switch, shows notifications
+# and a tray icon through the bus, and a test run must not be able to put any of it on the desktop of whoever runs it (the UI
+# tests are headless, the cross-process ones pass explicit switches, the D-Bus ones start a bus of their own).
+NO_DISPLAY := env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS
 
 test:
 	$(NO_DISPLAY) dotnet test tests/TgwsOne.Core.Tests
