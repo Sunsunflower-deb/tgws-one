@@ -154,4 +154,7 @@ internal interface IDialogService
 
     /// <summary>Shows the code for a phone over the main window; returns when its window is closed.</summary>
     Task ShowQrAsync(QrViewModel qr);
+
+    /// <summary>Shows the editor of a custom strategy over the main window; returns when its window is closed.</summary>
+    Task ShowCustomStrategyAsync(CustomStrategyViewModel editor);
 }

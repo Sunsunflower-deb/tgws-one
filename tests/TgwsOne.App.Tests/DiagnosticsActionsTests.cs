@@ -23,7 +23,8 @@ public class DiagnosticsActionsTests
         {
             Probes = new FakeProbes(Service);
             Bypass = new BypassViewModel(Service, Home.Monitor, Home.Dialogs,
-                () => new FinderViewModel(new StrategyFinder(Service, Probes, Probes, (_, _) => Task.CompletedTask)));
+                () => new FinderViewModel(new StrategyFinder(Service, Probes, Probes, (_, _) => Task.CompletedTask)),
+                _ => throw new NotSupportedException("these tests never open the strategy editor"), new FakeElevatedHelper(), new FakeClipboard());
             Actions = new DiagnosticsActions(Home.Home, Bypass, Service, Home.Monitor);
         }
 

@@ -39,7 +39,7 @@ internal sealed partial class App : Application
     private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
     {
         var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav, s.CreateQr);
-        var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder);
+        var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder, s.CreateCustomEditor, s.Elevated, s.Clipboard);
         var diagnostics = new DiagnosticsViewModel(s.CreateDiagnostics(), nav, new DiagnosticsActions(home, bypass, s.Control, s.Monitor));
         return
         [

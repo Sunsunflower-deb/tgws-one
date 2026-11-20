@@ -108,6 +108,38 @@
             </StackPanel>
           </StackPanel>
         </Border>
+
+        <!-- Strategies written by hand: saving them needs administrator rights, choosing them does not. -->
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="caption" Text="Свои стратегии (админ)" VerticalAlignment="Center" />
+              <Button x:Name="CreateCustomButton" Grid.Column="1" Content="Создать" Command="{Binding CreateCustomCommand}" />
+            </Grid>
+            <TextBlock x:Name="NoCustomText" Classes="caption" TextWrapping="Wrap"
+                       Text="Своих стратегий пока нет." IsVisible="{Binding !HasCustom}" />
+            <ItemsControl x:Name="CustomList" ItemsSource="{Binding CustomStrategies}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CustomStrategyItem">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Изменить" Margin="0,0,8,0" Command="{Binding EditCommand}" />
+                    <Button Grid.Column="2" Content="Удалить" Command="{Binding DeleteCommand}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="CustomNoticeText" Classes="caption" TextWrapping="Wrap" Text="{Binding CustomNotice}"
+                       IsVisible="{Binding CustomNotice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <StackPanel x:Name="CustomFallbackPanel" Spacing="6" IsVisible="{Binding HasCustomFallback}">
+              <TextBlock Classes="caption" Text="Выполните в терминале:" />
+              <SelectableTextBlock x:Name="CustomFallbackText" Text="{Binding CustomFallback}" TextWrapping="Wrap" FontSize="11"
+                                   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+              <Button x:Name="CopyCustomFallbackButton" Content="Копировать" HorizontalAlignment="Left"
+                      Command="{Binding CopyCustomFallbackCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

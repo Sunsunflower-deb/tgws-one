@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using Avalonia;
 using TgwsOne.Core;
 using TgwsOne.Core.Zapret;
+using TgwsOne.Services;
 
 namespace TgwsOne;
 
@@ -30,6 +31,7 @@ internal static class Program
           --version    показать версию
           --zapret     управлять обходом DPI через службу: --zapret status|on|off|use <id>|strategies|exclusions
           --service    запустить службу обхода DPI (для systemd / службы Windows)
+          --admin      служебное: сохранить или удалить свою стратегию (запускается из окна с правами администратора)
         """;
 
     /// <summary>No arguments, or just <c>--tray</c>: the window. Everything else is the CLI.</summary>
@@ -63,6 +65,10 @@ internal static class Program
     {
         if (args[0] == "--zapret")
             return await ZapretCli.RunAsync(args[1..], ServicePaths.Current, Console.Out, Console.Error);
+
+        // Started by the window with administrator rights (pkexec, UAC) to save or delete a custom strategy; see AdminCli.
+        if (args[0] == "--admin")
+            return AdminCli.Run(args[1..], ServicePaths.Current, OperatingSystem.IsWindows() ? OsKind.Windows : OsKind.Linux, Console.Out, Console.Error);
 
         switch (args.Length == 1 ? args[0] : "")
         {

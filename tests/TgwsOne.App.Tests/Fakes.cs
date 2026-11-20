@@ -224,6 +224,17 @@ internal sealed class FakeDialogs : IDialogService
         QrsShown.Add(qr);
         return Task.CompletedTask;
     }
+
+    /// <summary>What a test does while the strategy editor is "open" (default: nothing, it closes at once).</summary>
+    public Func<TgwsOne.ViewModels.CustomStrategyViewModel, Task>? WhileEditorOpen { get; set; }
+
+    public List<TgwsOne.ViewModels.CustomStrategyViewModel> EditorsShown { get; } = [];
+
+    public async Task ShowCustomStrategyAsync(TgwsOne.ViewModels.CustomStrategyViewModel editor)
+    {
+        EditorsShown.Add(editor);
+        if (WhileEditorOpen is { } work) await work(editor);
+    }
 }
 
 internal sealed class FakeNavigator : TgwsOne.ViewModels.INavigator

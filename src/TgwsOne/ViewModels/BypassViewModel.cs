@@ -28,6 +28,23 @@ internal sealed partial class StrategyOption : ObservableObject
     public void Resync() => OnPropertyChanged(nameof(IsSelected));
 }
 
+/// <summary>One of the administrator's own strategies, with its buttons.</summary>
+internal sealed class CustomStrategyItem
+{
+    public CustomStrategyItem(string id, Func<CustomStrategyItem, Task> edit, Func<CustomStrategyItem, Task> delete)
+    {
+        Id = id;
+        Name = id["custom:".Length..];
+        EditCommand = new AsyncRelayCommand(() => edit(this));
+        DeleteCommand = new AsyncRelayCommand(() => delete(this));
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public IAsyncRelayCommand EditCommand { get; }
+    public IAsyncRelayCommand DeleteCommand { get; }
+}
+
 /// <summary>A line of «Что выбрал Авто»: which strategy Авто settled on for a host and how often it had to move on.</summary>
 internal sealed record AutoRow(string Host, string StrategyName, string Failures);
 
@@ -41,11 +58,22 @@ internal sealed partial class BypassViewModel : PageViewModel
     private readonly StatusMonitor _monitor;
     private readonly IDialogService _dialogs;
     private readonly Func<FinderViewModel> _createFinder;
+    private readonly Func<string?, CustomStrategyViewModel> _createEditor;
+    private readonly IElevatedHelper _helper;
+    private readonly IClipboardService _clipboard;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChange))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand), nameof(CreateCustomCommand))]
     private bool _serviceReachable;
+
+    /// <summary>What came of the last thing done to the custom strategies (saved, could not be deleted, …).</summary>
+    [ObservableProperty] private string? _customNotice;
+
+    /// <summary>The command to run in a terminal when administrator rights could not be asked for from here.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCustomFallback))]
+    private string? _customFallback;
 
     [ObservableProperty] private bool _bypassOn;
     [ObservableProperty] private string _statusLine = "";
@@ -64,26 +92,37 @@ internal sealed partial class BypassViewModel : PageViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanChange))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleBypassCommand), nameof(SaveExclusionsCommand), nameof(FindBestCommand), nameof(CreateCustomCommand))]
     private bool _isBusy;
 
     private IReadOnlyList<string> _hosts = [];
     private IReadOnlyList<string> _ips = [];
 
     /// <param name="createFinder">A fresh finder for every run of «Подобрать лучшую…».</param>
-    public BypassViewModel(IControlClient control, StatusMonitor monitor, IDialogService dialogs, Func<FinderViewModel> createFinder)
+    /// <param name="createEditor">A fresh editor of a custom strategy: of the named one, or (null) of a new one.</param>
+    /// <param name="helper">Saves and deletes the custom strategies with administrator rights.</param>
+    public BypassViewModel(IControlClient control, StatusMonitor monitor, IDialogService dialogs, Func<FinderViewModel> createFinder,
+                           Func<string?, CustomStrategyViewModel> createEditor, IElevatedHelper helper, IClipboardService clipboard)
         : base(AppPageInfo.Title(AppPage.Bypass), AppPageInfo.Icon(AppPage.Bypass))
     {
         _control = control;
         _monitor = monitor;
         _dialogs = dialogs;
         _createFinder = createFinder;
+        _createEditor = createEditor;
+        _helper = helper;
+        _clipboard = clipboard;
         Apply(monitor.Current);
         monitor.Changed += Apply;
     }
 
     public ObservableCollection<StrategyOption> Strategies { get; } = [];
     public ObservableCollection<AutoRow> AutoRows { get; } = [];
+    public ObservableCollection<CustomStrategyItem> CustomStrategies { get; } = [];
+
+    public bool HasCustom => CustomStrategies.Count > 0;
+
+    public bool HasCustomFallback => CustomFallback != null;
 
     /// <summary>The page's controls are usable: there is a service and nothing is in flight.</summary>
     public bool CanChange => ServiceReachable && !IsBusy;
@@ -131,6 +170,11 @@ internal sealed partial class BypassViewModel : PageViewModel
                 Strategies.Clear();
                 foreach (StrategyItem item in items)
                     Strategies.Add(new StrategyOption(item.Id, ChooseAsync) { IsSelected = item.Id == CurrentStrategy });
+
+                CustomStrategies.Clear();
+                foreach (StrategyItem item in items.Where(i => i.Kind == "custom"))
+                    CustomStrategies.Add(new CustomStrategyItem(item.Id, EditCustomAsync, DeleteCustomAsync));
+                OnPropertyChanged(nameof(HasCustom));
             }
 
             ControlResponse exclusions = await _control.SendAsync(new ControlRequest(ControlCommands.Exclusions));
@@ -184,6 +228,63 @@ internal sealed partial class BypassViewModel : PageViewModel
         }
         await _monitor.RefreshNowAsync();
         Apply(_monitor.Current);
+    }
+
+    // ----- the administrator's own strategies -----
+
+    [RelayCommand(CanExecute = nameof(CanAct))]
+    private async Task CreateCustomAsync() => await EditorAsync(null);
+
+    private async Task EditCustomAsync(CustomStrategyItem item) => await EditorAsync(item.Name);
+
+    /// <summary>Opens the editor. A saved strategy shows up in the list at once; if it is the one in use it is applied again, so the running bypass has the new text.</summary>
+    private async Task EditorAsync(string? name)
+    {
+        CustomNotice = null;
+        CustomFallback = null;
+        CustomStrategyViewModel editor = _createEditor(name);
+        await _dialogs.ShowCustomStrategyAsync(editor);
+        if (!editor.Saved) return;
+
+        string id = "custom:" + editor.SavedName;
+        await LoadAsync();
+        if (CurrentStrategy == id)
+        {
+            await Run(() => _control.SendAsync(new ControlRequest(ControlCommands.Use, Strategy: id)));
+            foreach (StrategyOption o in Strategies) o.Resync();
+        }
+        CustomNotice = $"Стратегия «{editor.SavedName}» сохранена.";
+    }
+
+    private async Task DeleteCustomAsync(CustomStrategyItem item)
+    {
+        CustomNotice = null;
+        CustomFallback = null;
+        if (item.Id == CurrentStrategy)
+        {
+            CustomNotice = $"Стратегия «{item.Name}» сейчас выбрана: выберите другую, тогда её можно будет удалить.";
+            return;
+        }
+        if (!await _dialogs.ConfirmAsync("Удалить стратегию", $"Удалить свою стратегию «{item.Name}»? Нужны права администратора.", "Удалить", "Отмена"))
+            return;
+
+        AdminOutcome outcome = await _helper.DeleteStrategyAsync(item.Name);
+        if (!outcome.Ok)
+        {
+            CustomNotice = outcome.Message;
+            CustomFallback = outcome.FallbackCommand;
+            return;
+        }
+        await LoadAsync();
+        CustomNotice = $"Стратегия «{item.Name}» удалена.";
+    }
+
+    [RelayCommand]
+    private async Task CopyCustomFallbackAsync()
+    {
+        if (CustomFallback is null) return;
+        await _clipboard.SetTextAsync(CustomFallback);
+        CustomNotice = "Команда скопирована";
     }
 
     /// <summary>Sends one command, shows the service's refusal (if any), and brings the page in line with what the service reports afterwards.</summary>

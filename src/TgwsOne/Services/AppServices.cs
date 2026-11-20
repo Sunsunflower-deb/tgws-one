@@ -56,6 +56,33 @@ internal sealed class AppServices : IAsyncDisposable
         return new FinderViewModel(new StrategyFinder(Control, new SslTlsProbe(), new HttpDownloadProbe()));
     }
 
+    /// <summary>Saves and deletes custom strategies with administrator rights (pkexec / UAC).</summary>
+    public IElevatedHelper Elevated { get; } = ElevatedHelper.ForThisMachine();
+
+    /// <summary>
+    /// The editor of the named custom strategy (its file is read now), or of a new one, which starts from a small working example
+    /// so the first «Проверить» shows what a good one looks like.
+    /// </summary>
+    public CustomStrategyViewModel CreateCustomEditor(string? name)
+    {
+        ServicePaths service = ServicePaths.Current;
+        OsKind os = OperatingSystem.IsWindows() ? OsKind.Windows : OsKind.Linux;
+        ZapretBundle bundle = ZapretBundle.Locate(os, AppContext.BaseDirectory, Environment.GetEnvironmentVariable);
+        var context = new ZapretContext(os, bundle, service.Lists, service.StateDir, service.StrategiesDir);
+
+        string text = NewStrategyExample;
+        if (name != null)
+        {
+            try { text = File.ReadAllText(Path.Combine(service.StrategiesDir, name + ".args")); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { text = $"# Не удалось прочитать файл стратегии: {ex.Message}\n"; }
+        }
+        return new CustomStrategyViewModel(name, text, context, new ProcessCommandRunner(TimeSpan.FromSeconds(30)), Elevated, Clipboard, Launcher);
+    }
+
+    private const string NewStrategyExample =
+        "# По одному параметру в строке. Это пример: один шаг разрезания TLS-запроса.\n" +
+        "--lua-desync=multisplit:pos=1\n";
+
     /// <summary>A «QR для телефона» window's view-model, from the saved settings and this machine's network as they are now.</summary>
     public QrViewModel CreateQr() => new(Settings, new SystemNetInfo(), Clipboard);
 
