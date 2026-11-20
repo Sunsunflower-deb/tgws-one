@@ -19,6 +19,16 @@
     <!-- make build-win cross-compiles on Linux: the SDK refuses a Windows target there unless told it is intended. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
+    <!--
+      DO NOT REMOVE. .NET 9+ marks its executables as compatible with CET (hardware shadow stacks), and the runtime then refuses to
+      start on a Windows 10 that does not fully support CET: "Fatal error. Your Windows doesn't fully support CET. Please install
+      all available Windows updates." and exit code 0x80131506, with no window and no log (double-clicking does nothing). The
+      Windows 10 22H2 image of the build VM (build 19045.2965, never updated) is such a system: TgwsOne.exe built without this
+      property dies on it, and with it prints "TgwsOne 2.0.0". The installer promises Windows 10 1809 and newer, and the people
+      this is for often run unpatched or LTSC Windows, so the executable (the UI and the SYSTEM service alike) is built without
+      the flag. The price: this one process gets no CET shadow-stack hardening, which is defence in depth on CET-capable CPUs only.
+    -->
+    <CETCompat>false</CETCompat>
   </PropertyGroup>
 
   <ItemGroup>
