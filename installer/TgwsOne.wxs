@@ -10,8 +10,12 @@
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
 
-  <!-- Тот же UpgradeCode, что у 1.x: установка 2.0 заменяет 1.x (MajorUpgrade снимает старую версию). -->
-  <Package Name="TgwsOne" Manufacturer="TgwsOne" Version="$(var.Version)" Language="1033"
+  <!--
+    Тот же UpgradeCode, что у 1.x: установка 2.0 заменяет 1.x (MajorUpgrade снимает старую версию).
+    Язык русский, кодовая страница базы 1251: имя службы и правила файрвола написаны по-русски, а в 1252 такие символы
+    не помещаются (WIX0311). Сообщения условий запуска остаются английскими.
+  -->
+  <Package Name="TgwsOne" Manufacturer="TgwsOne" Version="$(var.Version)" Language="1049" Codepage="1251"
            UpgradeCode="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90" Scope="perMachine" Compressed="yes" InstallerVersion="500">
     <SummaryInformation Description="TgwsOne: local MTProto proxy for Telegram and DPI bypass" Manufacturer="TgwsOne" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of TgwsOne is already installed." />
