@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using Avalonia.Threading;
 using TgwsOne.ViewModels;
 using TgwsOne.Views;
 
@@ -19,6 +20,22 @@ internal sealed class AvaloniaDialogService(Func<Window?> owner) : IDialogServic
     {
         if (owner() is not { } window) return;
         await new FinderDialog { DataContext = finder }.ShowDialog(window);
+    }
+}
+
+/// <summary>The real <see cref="ITicker"/>: a timer of the UI thread, so a tick can touch the screen's data without marshalling.</summary>
+internal sealed class DispatcherTicker : ITicker
+{
+    public IDisposable Start(TimeSpan period, Action tick)
+    {
+        var timer = new DispatcherTimer(period, DispatcherPriority.Background, (_, _) => tick());
+        timer.Start();
+        return new Stop(timer);
+    }
+
+    private sealed class Stop(DispatcherTimer timer) : IDisposable
+    {
+        public void Dispose() => timer.Stop();
     }
 }
 

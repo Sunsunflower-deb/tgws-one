@@ -14,6 +14,11 @@ internal abstract class PageViewModel(string title, string iconPath) : Observabl
     public virtual void OnShown()
     {
     }
+
+    /// <summary>The page was just replaced by another one: a place to stop what <see cref="OnShown"/> started.</summary>
+    public virtual void OnHidden()
+    {
+    }
 }
 
 /// <summary>Stands in for a page until its own task lands.</summary>

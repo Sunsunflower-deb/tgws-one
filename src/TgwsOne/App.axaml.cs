@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
+using TgwsOne.Core.Zapret;
 using TgwsOne.Services;
 using TgwsOne.ViewModels;
 using TgwsOne.Views;
@@ -45,7 +46,7 @@ internal sealed partial class App : Application
             home,
             bypass,
             diagnostics,
-            MainWindowViewModel.Placeholder(AppPage.Logs),
+            new LogsViewModel(LogsViewModel.DefaultTabs(s.Paths, ServicePaths.Current), new DispatcherTicker(), s.Clipboard, s.Launcher),
             MainWindowViewModel.Placeholder(AppPage.Settings),
         ];
     });

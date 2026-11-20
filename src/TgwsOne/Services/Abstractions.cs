@@ -38,6 +38,13 @@ internal sealed class SystemNetInfo : INetInfo
                 .Select(c => new TcpConnection(c.LocalEndPoint, c.RemoteEndPoint, c.State))];
 }
 
+/// <summary>Something that happens every so often, on the UI thread: a seam so that tests can make time pass by hand.</summary>
+internal interface ITicker
+{
+    /// <returns>Disposing it stops the ticks.</returns>
+    IDisposable Start(TimeSpan period, Action tick);
+}
+
 /// <summary>Time, so throttles and timeouts can be tested without waiting.</summary>
 internal interface IClock
 {
