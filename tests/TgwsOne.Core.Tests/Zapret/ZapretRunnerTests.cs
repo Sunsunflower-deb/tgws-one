@@ -97,6 +97,35 @@ public class ZapretRunnerTests : IDisposable
     }
 
     [LinuxFact]
+    public async Task Crash_LastError_LeadsWithTheExitCode_ThenTheOutput()
+    {
+        await using ZapretRunner runner = _env.NewRunner();
+        _env.WriteCtl("crash_after_ms=500");
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+        _env.WriteCtl();
+
+        Assert.True(WaitFor(() => runner.Restarts >= 1));
+
+        string[] lines = runner.LastError!.Split('\n');
+        Assert.Equal("завершился с кодом 2", lines[0]);
+        Assert.Contains("fake zapret: crashing as asked", lines.Skip(1));
+    }
+
+    [LinuxFact]
+    public async Task KilledBySignal_LastErrorSaysWhichSignal()
+    {
+        await using ZapretRunner runner = _env.NewRunner();
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+        int pid = runner.Pid!.Value;
+
+        Assert.True(LibC.Kill(pid, 9));
+
+        Assert.True(WaitFor(() => runner.Restarts >= 1));
+        Assert.Equal("завершился с кодом 137 (сигнал 9)", runner.LastError!.Split('\n')[0]);
+        Assert.True(WaitFor(() => runner.State == RunnerState.Running && runner.Pid != pid), $"state {runner.State}");
+    }
+
+    [LinuxFact]
     public async Task RepeatedCrashes_StateError_LastErrorHasOutput()
     {
         await using ZapretRunner runner = _env.NewRunner();

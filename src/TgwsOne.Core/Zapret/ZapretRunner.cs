@@ -356,10 +356,16 @@ public sealed class ZapretRunner : IAsyncDisposable
         Interlocked.Exchange(ref _sinceTicks, 0);
     }
 
+    // How it ended first (a process killed by a signal reports 128 + the signal number), then what it last printed:
+    // the output alone is usually just start-up chatter and says nothing about why it stopped.
     private static string CrashText(Child child)
     {
+        int code = child.ExitCode;
+        string how = !OperatingSystem.IsWindows() && code is > 128 and < 192
+            ? $"завершился с кодом {code} (сигнал {code - 128})"
+            : $"завершился с кодом {code}";
         string tail = child.Tail();
-        return tail.Length > 0 ? tail : $"завершился с кодом {child.ExitCode}";
+        return tail.Length > 0 ? $"{how}\n{tail}" : how;
     }
 
     private async Task KillAsync(Child child)
