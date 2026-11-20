@@ -5,18 +5,14 @@ PUB := out/publish
 
 APP_BIN    := $(PUB)/$(RID_LINUX)/tgwsone
 ENGINE_BIN := out/engine/$(RID_LINUX)/tgws-engine
-LIBDIR     := $(DESTDIR)$(PREFIX)/lib/tgwsone
-BINDIR     := $(DESTDIR)$(PREFIX)/bin
-UNITDIR    := $(DESTDIR)$(PREFIX)/lib/systemd/system
-UNIT       := tgwsone-zapret.service
-DATADIR    := $(DESTDIR)$(PREFIX)/share
-APPSDIR    := $(DATADIR)/applications
-ICONDIR    := $(DATADIR)/icons/hicolor/256x256/apps
 ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
 LISTS_SRC  := $(PUB)/$(RID_LINUX)/lists
 # The UI's native libraries: publish leaves them next to the single-file executable instead of inside it (a bundled copy
 # would have to be unpacked into a home directory first, which the root-run --service can't count on).
 NATIVE_LIBS := libSkiaSharp.so libHarfBuzzSharp.so
+# What packaging/linux/install-tree.sh installs from: a folder laid out like the release tarball. For `make install` it is a
+# view of out/ made of links, so the 84 MB executable is not copied twice.
+INSTALL_SRC := out/install-src
 
 .PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall install-desktop uninstall-desktop clean
 
@@ -73,46 +69,33 @@ run:
 	$(APP_BIN) $(ARGS)
 
 # Installs the two binaries side by side (the app finds its engine, the zapret2 bundle and the shipped lists next to
-# itself), a relative symlink in bin/, and the systemd unit of the bypass service (not enabled). Does not build: run
-# `make zapret2 build engine` first. DESTDIR is for packagers; PREFIX=/usr for a package.
-# The bundle is copied with --no-preserve=ownership, not `cp -a`: after `sudo make install` the files must belong to
-# root, not to whoever built them, because nfqws2 and the Lua scripts run as root.
+# itself), a relative symlink in bin/, the systemd unit of the bypass service (not enabled), the menu entry and the icon.
+# Does not build: run `make zapret2 build engine` first. DESTDIR is for packagers; PREFIX=/usr for a package.
+# The layout itself is packaging/linux/install-tree.sh, which the release tarball's install.sh and the PKGBUILD use as well.
 install:
-	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
-	install -d $(LIBDIR) $(BINDIR) $(UNITDIR)
-	install -m 0755 $(APP_BIN) $(LIBDIR)/tgwsone
-	for lib in $(NATIVE_LIBS); do install -m 0755 $(PUB)/$(RID_LINUX)/$$lib $(LIBDIR)/$$lib; done
-	install -m 0755 $(ENGINE_BIN) $(LIBDIR)/tgws-engine
-	ln -sf ../lib/tgwsone/tgwsone $(BINDIR)/tgwsone
-	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
-	cp -r --no-preserve=ownership,mode $(ZAPRET_SRC) $(LIBDIR)/zapret2
-	cp -r --no-preserve=ownership,mode $(LISTS_SRC) $(LIBDIR)/lists
-	chmod -R u=rwX,go=rX $(LIBDIR)/zapret2 $(LIBDIR)/lists
-	chmod 0755 $(LIBDIR)/zapret2/nfqws2
-	sed 's|@PREFIX@|$(PREFIX)|g' packaging/linux/$(UNIT).in > $(UNITDIR)/$(UNIT)
-	chmod 0644 $(UNITDIR)/$(UNIT)
-	$(MAKE) --no-print-directory install-desktop
+	rm -rf $(INSTALL_SRC) && mkdir -p $(INSTALL_SRC)
+	ln -s $(CURDIR)/$(APP_BIN) $(INSTALL_SRC)/tgwsone
+	ln -s $(CURDIR)/$(ENGINE_BIN) $(INSTALL_SRC)/tgws-engine
+	for lib in $(NATIVE_LIBS); do ln -s $(CURDIR)/$(PUB)/$(RID_LINUX)/$$lib $(INSTALL_SRC)/$$lib; done
+	ln -s $(CURDIR)/$(ZAPRET_SRC) $(INSTALL_SRC)/zapret2
+	ln -s $(CURDIR)/$(LISTS_SRC) $(INSTALL_SRC)/lists
+	ln -s $(CURDIR)/packaging $(INSTALL_SRC)/packaging
+	packaging/linux/install-tree.sh "$(DESTDIR)" "$(PREFIX)" $(INSTALL_SRC)
 	@echo "служба установлена, но не включена: systemctl daemon-reload && systemctl enable --now tgwsone-zapret"
 
 # The menu entry and its icon (the 256 px picture of src/app.ico, cut out once into packaging/linux/tgwsone.png), where
 # desktop environments and the icon theme look for them. A separate target so it can be installed and checked on its own.
 install-desktop:
-	install -d $(APPSDIR) $(ICONDIR)
-	install -m 0644 packaging/linux/tgwsone.desktop $(APPSDIR)/tgwsone.desktop
-	install -m 0644 packaging/linux/tgwsone.png $(ICONDIR)/tgwsone.png
+	packaging/linux/install-tree.sh --desktop-only "$(DESTDIR)" "$(PREFIX)" .
 
 uninstall-desktop:
-	rm -f $(APPSDIR)/tgwsone.desktop $(ICONDIR)/tgwsone.png
-	rmdir $(ICONDIR) $(DATADIR)/icons/hicolor/256x256 2>/dev/null || true
+	packaging/linux/uninstall-tree.sh --desktop-only "$(DESTDIR)" "$(PREFIX)"
 
 # Removes exactly what install created; a directory only if nothing else is in it. What the service itself made
 # (/var/lib/tgwsone, /var/log/tgwsone) and the administrator's files (/etc/tgwsone) are not ours to remove.
 # A service that was enabled has to be stopped first: systemctl disable --now tgwsone-zapret
 uninstall:
-	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(addprefix $(LIBDIR)/,$(NATIVE_LIBS)) $(BINDIR)/tgwsone $(UNITDIR)/$(UNIT)
-	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
-	rmdir $(LIBDIR) $(UNITDIR) 2>/dev/null || true
-	$(MAKE) --no-print-directory uninstall-desktop
+	packaging/linux/uninstall-tree.sh "$(DESTDIR)" "$(PREFIX)"
 
 clean:
 	rm -rf out && find src tests -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
