@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace TgwsOne.ViewModels;
 
@@ -21,6 +22,12 @@ internal sealed partial class MainWindowViewModel : ObservableObject, INavigator
     }
 
     public IReadOnlyList<PageViewModel> Pages { get; }
+
+    /// <summary>What «Выход» does (set by the shell, which owns the lifetime: it stops the proxy and ends the application). Nothing until then.</summary>
+    public Action? RequestQuit { get; set; }
+
+    [RelayCommand]
+    private void Quit() => RequestQuit?.Invoke();
 
     partial void OnSelectedPageChanged(PageViewModel? oldValue, PageViewModel newValue)
     {

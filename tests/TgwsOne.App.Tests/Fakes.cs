@@ -171,6 +171,15 @@ internal sealed class FakeAppSettings : IAppSettings
         FirstRunDone = true;
     }
 
+    public bool TrayHintShown { get; set; }
+    public int TrayHintMarks { get; private set; }
+
+    public void MarkTrayHintShown()
+    {
+        TrayHintMarks++;
+        TrayHintShown = true;
+    }
+
     public void Save(ProxySettings settings, bool lanSharing, string? lanAddress, string? previousHost = null)
     {
         Saves++;

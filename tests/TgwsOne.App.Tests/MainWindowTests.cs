@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
 using TgwsOne.ViewModels;
@@ -65,4 +67,74 @@ public class MainWindowTests
     [InlineData(new[] { "--bogus" }, false)]
     public void Program_OnlyNoArgumentsOrTray_StartTheWindow(string[] args, bool window)
         => Assert.Equal(window, Program.IsUiLaunch(args));
+
+    // ----- Выход -----
+
+    [Fact]
+    public void QuitCommand_DoesNothingUntilTheShellSaysWhatQuittingIs_ThenCallsIt()
+    {
+        var vm = MainWindowViewModel.CreateShell();
+        vm.QuitCommand.Execute(null);   // no shell yet: not an error
+
+        int quits = 0;
+        vm.RequestQuit = () => quits++;
+        vm.QuitCommand.Execute(null);
+
+        Assert.Equal(1, quits);
+    }
+
+    [AvaloniaFact]
+    public void TheSidebarHasAnExitButton_BelowTheSections_AndItQuits()
+    {
+        var vm = MainWindowViewModel.CreateShell();
+        int quits = 0;
+        vm.RequestQuit = () => quits++;
+        var window = new MainWindow { DataContext = vm };
+        window.Show();
+
+        var quit = window.FindControl<Button>("QuitButton")!;
+        var sidebar = window.FindControl<ListBox>("Sidebar")!;
+
+        Assert.True(quit.IsVisible);
+        Assert.Contains(quit.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Выход");
+        Assert.True(quit.TranslatePoint(default, window)!.Value.Y > sidebar.TranslatePoint(default, window)!.Value.Y);
+        quit.Command!.Execute(null);
+        Assert.Equal(1, quits);
+    }
+
+    [AvaloniaFact]
+    public void CtrlQ_Quits()
+    {
+        var vm = MainWindowViewModel.CreateShell();
+        int quits = 0;
+        vm.RequestQuit = () => quits++;
+        var window = new MainWindow { DataContext = vm };
+        window.Show();
+
+        window.KeyPress(Avalonia.Input.Key.Q, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.Q, "q");
+
+        Assert.Equal(1, quits);
+    }
+
+    [AvaloniaFact]
+    public void QWithoutCtrl_DoesNotQuit()
+    {
+        var vm = MainWindowMakeForQuit(out Func<int> quits);
+        var window = new MainWindow { DataContext = vm };
+        window.Show();
+
+        window.KeyPress(Avalonia.Input.Key.Q, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Q, "q");
+
+        Assert.Equal(0, quits());
+    }
+
+    private static MainWindowViewModel MainWindowMakeForQuit(out Func<int> quits)
+    {
+        var vm = MainWindowViewModel.CreateShell();
+        int count = 0;
+        vm.RequestQuit = () => count++;
+        quits = () => count;
+        return vm;
+    }
 }
+

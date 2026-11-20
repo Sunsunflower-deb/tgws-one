@@ -246,4 +246,18 @@ public class IniAppSettingsTests
         Assert.Equal(secret, after.Secret());
         Assert.Equal(1556, after.Load().Port);
     }
+
+    [Fact]
+    public void TheTrayHint_IsNotShownOnAFreshProfile_UntilMarked_AndIsRemembered_IndependentlyOfTheFirstRun()
+    {
+        using var tmp = new TempDir();
+        var settings = new IniAppSettings(PathsIn(tmp));
+        Assert.False(settings.TrayHintShown);
+
+        settings.MarkTrayHintShown();
+
+        Assert.True(new IniAppSettings(PathsIn(tmp)).TrayHintShown);
+        Assert.False(new IniAppSettings(PathsIn(tmp)).FirstRunDone);
+        Assert.Equal("shown", IniFile.Load(PathsIn(tmp).Ini).Get("app", "trayhint"));
+    }
 }

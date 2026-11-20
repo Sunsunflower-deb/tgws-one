@@ -35,7 +35,21 @@
     </DataTemplate>
   </Window.DataTemplates>
 
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Q" Command="{Binding QuitCommand}" />
+  </Window.KeyBindings>
+
   <Window.Styles>
+    <!-- The exit button sits among the sidebar's entries and answers the pointer like them. -->
+    <Style Selector="Button#QuitButton">
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Button#QuitButton:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1F808080" />
+    </Style>
+    <Style Selector="Button#QuitButton:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="#33808080" />
+    </Style>
     <Style Selector="ListBox#Sidebar ListBoxItem">
       <Setter Property="Padding" Value="12,10" />
       <Setter Property="Margin" Value="0,2" />
@@ -50,6 +64,15 @@
             BorderThickness="0,0,1,0">
       <DockPanel Margin="10,14,10,10">
         <TextBlock DockPanel.Dock="Top" Text="TgwsOne" FontSize="18" FontWeight="SemiBold" Margin="12,2,12,16" />
+        <!-- Closing the window only hides it; this is how the application ends (with the tray's Выход, and Ctrl+Q). -->
+        <Button x:Name="QuitButton" DockPanel.Dock="Bottom" Classes="plain" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="12,10" Margin="0,2,0,0" Command="{Binding QuitCommand}" ToolTip.Tip="Выход (Ctrl+Q)"
+                AutomationProperties.Name="Выход">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <v:Icon Data="{x:Static v:IconPaths.Power}" Width="18" Height="18" VerticalAlignment="Center" />
+            <TextBlock Text="Выход" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
         <ListBox x:Name="Sidebar"
                  Background="Transparent"
                  ItemsSource="{Binding Pages}"

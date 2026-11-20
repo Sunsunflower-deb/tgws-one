@@ -121,6 +121,11 @@ internal interface IAppSettings
     /// <summary>Writes <c>[app] firstrun=done</c>.</summary>
     void MarkFirstRunDone();
 
+    /// <summary>The first close to the tray has been explained once («TgwsOne работает в трее»): never again.</summary>
+    bool TrayHintShown { get; }
+
+    void MarkTrayHintShown();
+
     /// <summary>Sharing with a phone on this network is on: the proxy listens on every interface.</summary>
     bool LanSharing { get; }
 
