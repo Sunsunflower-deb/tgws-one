@@ -42,7 +42,7 @@ if errorlevel 1 goto :err
 echo Готово. Теперь MSI запускается как от известного издателя.
 echo.
 echo Проверить подпись установщика:
-echo   powershell -Command "Get-AuthenticodeSignature 'TgwsOne-1.0.5-selfsigned.msi' ^| Format-List Status"
+echo   powershell -Command "Get-AuthenticodeSignature (Get-ChildItem '*.msi' | Select-Object -First 1) ^| Format-List Status"
 echo.
 echo Удалить сертификат потом:
 echo   certutil -delstore "Root" 94A82AB20B72495E5AADFFBDD066483CF67694E8
