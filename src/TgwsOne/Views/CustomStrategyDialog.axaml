@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TgwsOne.ViewModels"
+        xmlns:v="using:TgwsOne.Views"
+        x:Class="TgwsOne.Views.CustomStrategyDialog"
+        x:DataType="vm:CustomStrategyViewModel"
+        Title="Своя стратегия"
+        Width="660"
+        SizeToContent="Height"
+        MaxHeight="780"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBackground}">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="24" Spacing="14">
+
+      <TextBlock x:Name="TitleText" Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" />
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Имя" />
+        <TextBox x:Name="NameBox" Width="260" HorizontalAlignment="Left" PlaceholderText="my-isp"
+                 Text="{Binding Name}" IsEnabled="{Binding NameEditable}" />
+        <TextBlock x:Name="NameErrorText" Classes="error" Text="{Binding NameError}"
+                   IsVisible="{Binding NameError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Параметры" />
+        <TextBox x:Name="ParamsBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="190" FontSize="12"
+                 FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace"
+                 Text="{Binding Text}" />
+        <TextBlock x:Name="TextErrorText" Classes="error" Text="{Binding TextError}"
+                   IsVisible="{Binding TextError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Classes="caption" TextWrapping="Wrap" Text="{x:Static vm:CustomStrategyViewModel.Hint}" />
+        <Button x:Name="HelpButton" Content="Справка по параметрам" Classes="plain" HorizontalAlignment="Left"
+                Foreground="{DynamicResource AccentButtonBackground}" Padding="0,4" Command="{Binding OpenHelpCommand}" />
+      </StackPanel>
+
+      <!-- The real dry run, as the current user. -->
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button x:Name="CheckButton" Content="Проверить" Command="{Binding CheckCommand}" />
+        <TextBlock x:Name="NoticeText" Classes="caption" VerticalAlignment="Center" Text="{Binding Notice}"
+                   IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+      <Border x:Name="CheckPanel" Classes="card" Padding="12" IsVisible="{Binding CheckOutput, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <SelectableTextBlock x:Name="CheckOutputText" Text="{Binding CheckOutput}" TextWrapping="Wrap" FontSize="11"
+                             FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+      </Border>
+
+      <!-- No way to ask for administrator rights from here: the command to run by hand. -->
+      <Border x:Name="FallbackPanel" Classes="card" IsVisible="{Binding HasFallback}">
+        <StackPanel Spacing="8">
+          <TextBlock x:Name="FallbackProblemText" Text="{Binding Problem}" TextWrapping="Wrap" />
+          <TextBlock Classes="caption" Text="Выполните в терминале:" />
+          <SelectableTextBlock x:Name="FallbackText" Text="{Binding FallbackCommand}" TextWrapping="Wrap" FontSize="11"
+                               FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+          <Button x:Name="CopyFallbackButton" Content="Копировать" HorizontalAlignment="Left" Command="{Binding CopyFallbackCommand}" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock x:Name="ProblemText" Classes="error" Text="{Binding Problem}" IsVisible="{Binding ShowProblem}" />
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button x:Name="CancelButton" Content="Отмена" IsCancel="True" MinWidth="96" Command="{Binding CancelCommand}" />
+        <Button x:Name="SaveButton" Classes="accent" Content="Сохранить (нужны права администратора)" IsDefault="True"
+                Command="{Binding SaveCommand}" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

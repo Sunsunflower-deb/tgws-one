@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.ViewModels"
+             xmlns:v="using:TgwsOne.Views"
+             x:Class="TgwsOne.Views.LogsView"
+             x:DataType="vm:LogsViewModel">
+
+  <UserControl.Styles>
+    <!-- The theme's tab headers are 24 px light type: far too big next to the rest of the page. (The bar under the selected one is
+         styled in App.axaml: a rule that reaches into a control template has to live there to apply.) -->
+    <Style Selector="TabControl#TabsControl TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="MinHeight" Value="38" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" Margin="32,28,32,24">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+      <TextBlock Text="Журналы" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <TextBlock x:Name="NoticeText" Classes="caption" VerticalAlignment="Center" Text="{Binding Notice}"
+                   IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <CheckBox x:Name="FollowCheck" Content="Следить за концом" IsChecked="{Binding FollowEnd}" />
+        <Button x:Name="CopyButton" Content="Копировать" Command="{Binding CopyCommand}" />
+        <Button x:Name="OpenFolderButton" Content="Открыть папку" Command="{Binding OpenFolderCommand}" />
+      </StackPanel>
+    </Grid>
+
+    <TabControl x:Name="TabsControl" Classes="tabs" Grid.Row="1" Padding="0" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}">
+      <TabControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:LogTabViewModel">
+          <TextBlock Text="{Binding Title}" />
+        </DataTemplate>
+      </TabControl.ItemTemplate>
+      <TabControl.ContentTemplate>
+        <DataTemplate x:DataType="vm:LogTabViewModel">
+          <Border Classes="card" Padding="0" Margin="0,12,0,0" ClipToBounds="True">
+            <Grid>
+              <v:LogTextView Text="{Binding Text}" FollowEnd="{Binding FollowEnd}" IsVisible="{Binding !HasProblem}" />
+              <TextBlock Classes="caption" Margin="16" TextWrapping="Wrap" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </TabControl.ContentTemplate>
+    </TabControl>
+  </Grid>
+</UserControl>

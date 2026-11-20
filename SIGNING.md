@@ -4,7 +4,9 @@
 антивирусов к самому exe/msi. Драйвер WinDivert она не «обелит» — он подписан своим автором,
 и детекты `RiskTool/WinDivert` от нашей подписи не зависят.
 
-Подписывать нужно **два файла**: `TgwsOne.exe` (до упаковки в MSI) и сам `TgwsOne-x.y.z.msi`.
+Подписывать нужно **три файла**: `TgwsOne.exe` (приложение и служба — это один и тот же файл) и `tgws-engine.exe`
+(движок прокси) до упаковки в MSI, а затем сам `TgwsOne-x.y.z.msi`. `winws2.exe`, `WinDivert.dll` и драйвер
+`WinDivert64.sys` — чужие файлы, их не подписываем.
 
 ## Чем подписывать
 
@@ -22,13 +24,13 @@
 ## Локальная подпись (PFX)
 
 ```powershell
-# 1. exe
+# 1. exe (из дерева, которое build.ps1 собирает перед упаковкой: по умолчанию build\stage)
 signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-  /f cert.pfx /p "пароль" build\stage\TgwsOne.exe
+  /f cert.pfx /p "пароль" build\stage\TgwsOne.exe build\stage\tgws-engine.exe
 
 # 2. msi (после сборки)
 signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-  /f cert.pfx /p "пароль" dist\TgwsOne-1.0.5.msi
+  /f cert.pfx /p "пароль" dist\TgwsOne-2.0.0.msi
 ```
 
 `signtool.exe` ставится с Windows SDK (компонент *Windows SDK Signing Tools*).
@@ -39,7 +41,7 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
 
 ```powershell
 signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-  /sha1 <отпечаток сертификата> dist\TgwsOne-1.0.5.msi
+  /sha1 <отпечаток сертификата> dist\TgwsOne-2.0.0.msi
 ```
 
 Сертификат должен быть виден в хранилище `Cert:\CurrentUser\My` (или `LocalMachine\My`).
@@ -50,7 +52,7 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
 
 ```powershell
 # PFX
-.\build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin _zapret\bin -Version 1.0.5.0 `
+.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0 `
   -Pfx cert.pfx -PfxPassword "пароль"
 
 # сертификат из хранилища/токена
@@ -60,13 +62,30 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
 $env:TGWS_SIGN_PFX = "cert.pfx"; $env:TGWS_SIGN_PFX_PASSWORD = "пароль"; .\build.ps1 ...
 ```
 
-Порядок: компиляция exe → подпись exe → staging → сборка MSI → подпись MSI.
+Параметры `build.ps1` (пути без диска и без `\\` отсчитываются от папки скрипта):
+
+| Параметр | По умолчанию | Что это |
+|---|---|---|
+| `-AppDir` | `out\publish\win-x64` | Папка с `TgwsOne.exe`, `zapret2\` и `lists\` (`make build-win` или `dotnet publish` + `zapret2\fetch.ps1`) |
+| `-Engine` | `out\engine\win-x64\tgws-engine.exe` | Движок прокси; его собирает `engine\build-engine.ps1` |
+| `-Version` | `2.0.0.0` | Версия MSI, четыре числа |
+| `-Out` | `dist\TgwsOne-<x.y.z>.msi` | Куда положить MSI |
+| `-StageDir` | `build\stage` | Где собирать дерево для упаковки; лучше на локальном диске, не на сетевой папке |
+| `-Pfx`, `-PfxPassword` | `$env:TGWS_SIGN_PFX`, `$env:TGWS_SIGN_PFX_PASSWORD` | Подпись PFX-файлом |
+| `-Thumbprint` | `$env:TGWS_SIGN_THUMBPRINT` | Подпись сертификатом из хранилища или с токена |
+| `-TimestampUrl` | `http://timestamp.digicert.com` | Сервер меток времени |
+
+Без `-Pfx` и `-Thumbprint` сборка идёт без подписи, о чём `build.ps1` пишет в вывод.
+
+Порядок: проверка входов → дерево в `-StageDir` (без `.pdb`) → подпись `TgwsOne.exe` и `tgws-engine.exe` →
+`wix build` → подпись MSI.
 
 ## Подпись в CI
 
-В workflow уже есть поддержка: если в настройках репозитория заданы секреты
-`SIGN_PFX_BASE64` (файл PFX в base64) и `SIGN_PFX_PASSWORD`, сборка подписывает exe и MSI
-автоматически. Без секретов шаг просто пропускается.
+В workflow (задача `windows`) уже есть поддержка: если в настройках репозитория заданы секреты
+`SIGN_PFX_BASE64` (файл PFX в base64) и `SIGN_PFX_PASSWORD`, сборка подписывает оба exe и MSI
+автоматически. Без секретов шаг просто пропускается. Архив для Linux (`.tar.gz`) не подписывается: рядом с ним
+лежит `.sha256`.
 
 ```powershell
 # подготовить секрет
@@ -79,8 +98,8 @@ $env:TGWS_SIGN_PFX = "cert.pfx"; $env:TGWS_SIGN_PFX_PASSWORD = "пароль"; .
 ## Проверка
 
 ```powershell
-Get-AuthenticodeSignature dist\TgwsOne-1.0.5.msi | Format-List Status, SignerCertificate
-signtool verify /pa /v dist\TgwsOne-1.0.5.msi
+Get-AuthenticodeSignature dist\TgwsOne-2.0.0.msi | Format-List Status, SignerCertificate
+signtool verify /pa /v dist\TgwsOne-2.0.0.msi
 ```
 
 `Status = Valid` — подпись корректна и с таймстампом.

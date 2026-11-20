@@ -1,0 +1,24 @@
+# TgwsOne: the privileged half. It owns nfqws2 and the nftables rules, and answers the control socket
+# /run/tgwsone/control.sock, so ordinary users can switch the bypass without any password.
+# The install prefix in ExecStart is filled in by packaging/linux/install-tree.sh.
+[Unit]
+Description=TgwsOne: обход DPI (zapret2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=@PREFIX@/lib/tgwsone/tgwsone --service
+Restart=on-failure
+# A service killed with SIGKILL never gets to remove its nftables table, which would then stay until the next start. The queue rule
+# has the bypass flag, so traffic keeps flowing meanwhile, but there is no reason to leave it. The leading "-": a table that is
+# already gone is not a failure. env finds nft wherever the distribution keeps it (/usr/bin or /usr/sbin).
+ExecStopPost=-/usr/bin/env nft delete table inet tgwsone
+# /run/tgwsone (the socket), /var/lib/tgwsone (state and exclusions), /var/log/tgwsone, /etc/tgwsone (lists, strategies)
+RuntimeDirectory=tgwsone
+StateDirectory=tgwsone
+LogsDirectory=tgwsone
+ConfigurationDirectory=tgwsone
+
+[Install]
+WantedBy=multi-user.target

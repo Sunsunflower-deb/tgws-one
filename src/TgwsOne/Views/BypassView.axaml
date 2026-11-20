@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.ViewModels"
+             xmlns:v="using:TgwsOne.Views"
+             x:Class="TgwsOne.Views.BypassView"
+             x:DataType="vm:BypassViewModel">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="720">
+
+      <!-- Header: the switch for everyone on this computer. -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Обход DPI для всего компьютера" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <v:StatusDot Tone="{Binding StatusTone}" Width="10" Height="10" VerticalAlignment="Center" />
+            <TextBlock x:Name="StatusLineText" Classes="caption" Text="{Binding StatusLine}" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+        <ToggleSwitch x:Name="BypassSwitch" Grid.Column="1" VerticalAlignment="Center"
+                      OnContent="Включён" OffContent="Выключен"
+                      IsChecked="{Binding BypassOn, Mode=OneWay}"
+                      Command="{Binding ToggleBypassCommand}" />
+      </Grid>
+
+      <Border x:Name="UnavailablePanel" Classes="card" Padding="12,10" IsVisible="{Binding !ServiceReachable}">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <v:Icon Data="{x:Static v:IconPaths.Info}" Width="20" Height="20" VerticalAlignment="Center" />
+          <TextBlock Text="{x:Static vm:BypassViewModel.UnavailableText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+        </StackPanel>
+      </Border>
+
+      <!-- Everything below is off while there is no service to talk to. -->
+      <StackPanel x:Name="ContentPanel" Spacing="16" IsEnabled="{Binding ServiceReachable}">
+
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="caption" Text="Стратегия" />
+            <ItemsControl x:Name="StrategyList" ItemsSource="{Binding Strategies}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StrategyOption">
+                  <RadioButton GroupName="Strategy" MinWidth="230" Margin="0,0,16,4"
+                               Content="{Binding Name}"
+                               IsChecked="{Binding IsSelected, Mode=OneWay}"
+                               Command="{Binding ChooseCommand}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button x:Name="FindBestButton" Content="Подобрать лучшую…" HorizontalAlignment="Left"
+                    Command="{Binding FindBestCommand}" />
+            <TextBlock x:Name="ErrorTextBlock" Foreground="{DynamicResource ToneRed}" TextWrapping="Wrap"
+                       Text="{Binding ErrorText}"
+                       IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="AutoPanel" Classes="card" IsVisible="{Binding ShowAuto}">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="caption" Text="Что выбрал Авто" />
+            <TextBlock x:Name="AutoEmptyText" Classes="caption" TextWrapping="Wrap"
+                       Text="{x:Static vm:BypassViewModel.EmptyAutoText}" IsVisible="{Binding AutoIsEmpty}" />
+            <ItemsControl x:Name="AutoList" ItemsSource="{Binding AutoRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:AutoRow">
+                  <Grid ColumnDefinitions="*,170,90" Margin="0,3">
+                    <TextBlock Text="{Binding Host}" />
+                    <TextBlock Grid.Column="1" Text="{Binding StrategyName}" />
+                    <TextBlock Grid.Column="2" Classes="caption" Text="{Binding Failures}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="caption" Text="Исключения (обход их не трогает)" />
+                <TextBlock x:Name="ExclusionsSummaryText" Text="{Binding ExclusionsSummary}" TextWrapping="Wrap" />
+              </StackPanel>
+              <Button x:Name="EditExclusionsButton" Grid.Column="1" Content="Изменить" VerticalAlignment="Top"
+                      Command="{Binding EditExclusionsCommand}" IsVisible="{Binding !IsEditingExclusions}" />
+            </Grid>
+
+            <StackPanel x:Name="ExclusionsEditor" Spacing="8" IsVisible="{Binding IsEditingExclusions}">
+              <TextBlock Classes="caption" Text="Сайты" />
+              <TextBox x:Name="HostsBox" AcceptsReturn="True" TextWrapping="Wrap" Height="96"
+                       PlaceholderText="sberbank.ru" Text="{Binding HostsText}" />
+              <TextBlock Classes="caption" Text="IP-адреса и подсети" />
+              <TextBox x:Name="IpsBox" AcceptsReturn="True" TextWrapping="Wrap" Height="96"
+                       PlaceholderText="203.0.113.0/24" Text="{Binding IpsText}" />
+              <TextBlock x:Name="InvalidTextBlock" Foreground="{DynamicResource ToneRed}" TextWrapping="Wrap"
+                         Text="{Binding InvalidText}"
+                         IsVisible="{Binding InvalidText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="SaveExclusionsButton" Classes="accent" Content="Сохранить"
+                        Command="{Binding SaveExclusionsCommand}" />
+                <Button x:Name="CancelExclusionsButton" Content="Отмена" Command="{Binding CancelExclusionsCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Strategies written by hand: saving them needs administrator rights, choosing them does not. -->
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="caption" Text="Свои стратегии (админ)" VerticalAlignment="Center" />
+              <Button x:Name="CreateCustomButton" Grid.Column="1" Content="Создать" Command="{Binding CreateCustomCommand}" />
+            </Grid>
+            <TextBlock x:Name="NoCustomText" Classes="caption" TextWrapping="Wrap"
+                       Text="Своих стратегий пока нет." IsVisible="{Binding !HasCustom}" />
+            <ItemsControl x:Name="CustomList" ItemsSource="{Binding CustomStrategies}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CustomStrategyItem">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Изменить" Margin="0,0,8,0" Command="{Binding EditCommand}" />
+                    <Button Grid.Column="2" Content="Удалить" Command="{Binding DeleteCommand}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="CustomNoticeText" Classes="caption" TextWrapping="Wrap" Text="{Binding CustomNotice}"
+                       IsVisible="{Binding CustomNotice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <StackPanel x:Name="CustomFallbackPanel" Spacing="6" IsVisible="{Binding HasCustomFallback}">
+              <TextBlock Classes="caption" Text="Выполните в терминале:" />
+              <SelectableTextBlock x:Name="CustomFallbackText" Text="{Binding CustomFallback}" TextWrapping="Wrap" FontSize="11"
+                                   FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+              <Button x:Name="CopyCustomFallbackButton" Content="Копировать" HorizontalAlignment="Left"
+                      Command="{Binding CopyCustomFallbackCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

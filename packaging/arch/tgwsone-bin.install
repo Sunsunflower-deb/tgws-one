@@ -1,0 +1,19 @@
+# Пакет службу не включает: она ставит правила nftables рядом с чужими (VPN, файрвол), и решать это должен администратор.
+
+post_install() {
+  echo '==> TgwsOne: служба обхода DPI установлена, но не включена.'
+  echo '    Включить:  sudo systemctl enable --now tgwsone-zapret'
+  echo '    Дальше обычному пользователю права администратора не нужны: приложение управляет службой через локальный сокет.'
+}
+
+post_upgrade() {
+  # Запущенная служба продолжает работать на старых файлах, пока её не перезапустят.
+  if systemctl is-active --quiet tgwsone-zapret 2>/dev/null; then
+    echo '==> TgwsOne: служба запущена со старой версией. Перезапустить:  sudo systemctl restart tgwsone-zapret'
+  fi
+}
+
+pre_remove() {
+  # Файлы уходят из-под работающей службы: останавливаем её (таблицу nftables убирает сам юнит).
+  systemctl disable --now tgwsone-zapret >/dev/null 2>&1 || true
+}

@@ -1,59 +1,144 @@
 name: build
 
+# A v* tag builds both platforms and publishes a release. A manual run (workflow_dispatch) and a pull request into main only
+# build and keep the artifacts; a pull request never sees the signing secrets, so its MSI is unsigned.
+# The version is the one in Directory.Build.props (it is what the program prints, what names the tarball and the PKGBUILD);
+# a tag that does not say the same version fails the build before anything is published.
 on:
   push:
     tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
 
 jobs:
-  build:
-    runs-on: windows-latest
-
+  linux:
+    name: Linux (tarball, PKGBUILD)
+    # The oldest runner image that is still supported: the self-contained .NET app and the PyInstaller engine link against the
+    # build machine's glibc, so a tarball built on a newer system would not start on an older one.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
-      - name: Install WiX
+      - uses: astral-sh/setup-uv@v6
+
+      # The headless UI tests draw with Skia, which needs fontconfig.
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
+
+      - name: Check the tag against the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' Directory.Build.props)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match <Version> $version in Directory.Build.props" >&2
+            exit 1
+          fi
+
+      - name: Engine and zapret2
+        run: make engine zapret2
+
+      - name: Build and test
+        run: make build test
+
+      - name: Test against the real engine
+        run: make test-engine
+
+      - name: Tarball and PKGBUILD
+        run: make dist-linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          if-no-files-found: error
+          path: |
+            dist/tgwsone-*-linux-x64.tar.gz
+            dist/tgwsone-*-linux-x64.tar.gz.sha256
+            dist/PKGBUILD
+            dist/tgwsone-bin.install
+
+  windows:
+    name: Windows (MSI)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # WiX 5 is built for older .NET runtimes; with only .NET 10 on the machine it has to be allowed to roll forward.
+      DOTNET_ROLL_FORWARD: LatestMajor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Version
+        shell: pwsh
         env:
-          DOTNET_ROLL_FORWARD: LatestMajor
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "unexpected <Version> in Directory.Build.props: $version" }
+          if ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$version") {
+            throw "tag $env:REF_NAME does not match <Version> $version in Directory.Build.props"
+          }
+          "MSI_VERSION=$version.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # wix.exe is a .NET apphost. A .NET 9+/10 apphost does not start on a Windows that does not fully support CET (an
+      # unpatched Windows 10): "Your Windows doesn't fully support CET", exit code 0x80131506. The runner image is current, so
+      # it starts here; build.ps1 runs wix as `dotnet wix.dll` by itself if it ever does not. `wix extension add` below has no
+      # such fallback: on an image that hit this, call it as `dotnet <tool store>\wix.dll extension add ...` instead.
+      - name: WiX
+        shell: pwsh
         run: |
           dotnet tool install --global wix --version 5.0.2
-          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+          if ($LASTEXITCODE -ne 0) { throw "wix install failed" }
+          $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+          $tools | Out-File -FilePath $env:GITHUB_PATH -Append
+          $env:PATH = "$tools;$env:PATH"
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "wix extension add (Util) failed" }
+          wix extension add -g WixToolset.Firewall.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "wix extension add (Firewall) failed" }
 
-      - name: Download upstream binaries
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Engine
+        shell: pwsh
+        run: ./engine/build-engine.ps1
+
+      - name: zapret2
+        shell: pwsh
+        run: ./zapret2/fetch.ps1
+
+      # The same layout as `make build-win`: the zapret2 bundle and the target lists sit next to TgwsOne.exe.
+      - name: Application
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path _upstream, _zapret_dl | Out-Null
-          gh release download --repo Flowseal/tg-ws-proxy --pattern TgWsProxy_windows.exe --dir _upstream
-          gh release download --repo Flowseal/zapret-discord-youtube --pattern "*.zip" --dir _zapret_dl
-          $zip = Get-ChildItem _zapret_dl -Filter *.zip | Select-Object -First 1
-          if (-not $zip) { throw "zapret archive not found" }
-          Expand-Archive $zip.FullName -DestinationPath _zapret -Force
-          $bin = Get-ChildItem _zapret -Recurse -Filter winws.exe |
-                 Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
-          if (-not $bin) { throw "winws.exe not found in zapret archive" }
-          "ZAPRET_BIN=$($bin.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          dotnet publish src/TgwsOne -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o out/publish/win-x64
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+          Copy-Item out/zapret2/win-x64 out/publish/win-x64/zapret2 -Recurse
+          New-Item -ItemType Directory -Force out/publish/win-x64/lists | Out-Null
+          Copy-Item lists/*.txt out/publish/win-x64/lists/
 
-      - name: Build MSI
+      - name: MSI
         shell: pwsh
         env:
-          DOTNET_ROLL_FORWARD: LatestMajor
-          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
-          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+          SIGN_PFX_BASE64: ${{ github.event_name != 'pull_request' && secrets.SIGN_PFX_BASE64 || '' }}
+          SIGN_PFX_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.SIGN_PFX_PASSWORD || '' }}
         run: |
-          $v = "${{ github.ref_name }}"
-          if ($v -match '^v\d') { $v = $v.Substring(1) } else { $v = "1.0.3.0" }
-          if (($v -split '\.').Count -lt 4) { $v = "$v.0" }
-
           $signArgs = @()
           if ($env:SIGN_PFX_BASE64) {
             $pfx = Join-Path $env:RUNNER_TEMP "sign.pfx"
@@ -63,20 +148,36 @@ jobs:
           } else {
             Write-Host "подпись не настроена: сборка без подписи"
           }
-
-          ./build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin $env:ZAPRET_BIN -Version $v @signArgs
+          ./build.ps1 -Version $env:MSI_VERSION @signArgs
 
       - uses: actions/upload-artifact@v4
         with:
           name: msi
+          if-no-files-found: error
           path: dist/*.msi
+
+  release:
+    name: Release
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every artifact lands in a folder of its own name: release/linux/…, release/msi/….
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG
           $ver = $tag -replace '^v', ''
 
           # описание берём из CHANGELOG.md: раздел текущей версии
@@ -89,16 +190,21 @@ jobs:
               if ($body) { $notes = $body }
             }
           }
-          $footer = "---`nУстановщик приложен ниже: внутри приложение, движок прокси, zapret и списки — дополнительно ничего скачивать не нужно."
+          $footer = "---`nWindows: установщик TgwsOne-$ver.msi — внутри приложение, движок прокси, zapret2 и списки, ничего дополнительно скачивать не нужно.`nLinux: архив tgwsone-$ver-linux-x64.tar.gz (внутри install.sh) или пакет для Arch Linux — PKGBUILD tgwsone-bin."
           $notes = "$notes`n`n$footer"
           [System.IO.File]::WriteAllText("release-notes.md", $notes, (New-Object System.Text.UTF8Encoding($false)))
 
+          $files = @(Get-ChildItem release -Recurse -File | ForEach-Object { $_.FullName })
+          if ($files.Count -eq 0) { throw "нет файлов для релиза: артефакты не скачались" }
+          $files | ForEach-Object { Write-Host "в релиз: $_" }
+
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist/*.msi --clobber
+            gh release upload $tag @files --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
             gh release edit $tag --notes-file release-notes.md
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
           } else {
-            gh release create $tag dist/*.msi `
-              --title "TG WS Proxy $tag" `
-              --notes-file release-notes.md
+            gh release create $tag @files --title "TgwsOne $tag" --notes-file release-notes.md
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
           }

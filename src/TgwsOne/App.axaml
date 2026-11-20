@@ -1,0 +1,167 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.App"
+             RequestedThemeVariant="Default">
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <!-- The accent and the window colour the theme derives selection, focus and fills from. -->
+        <ColorPaletteResources x:Key="Light" Accent="#2F6FEB" RegionColor="#F7F8FA" ErrorText="#D93025" />
+        <ColorPaletteResources x:Key="Dark" Accent="#4C8DFF" RegionColor="#181A1F" ErrorText="#F85149" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <!-- A panel on the page: Home's status rows, the finder's table, the settings groups. -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource SecondaryText}" />
+    </Style>
+
+    <!-- What is wrong with a field, right under it. -->
+    <Style Selector="TextBlock.error">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource ToneRed}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- The theme rounds a check box by the same radius as a button: at 8 on a 16 px box that is a circle, and reads as a radio button. -->
+    <Style Selector="CheckBox">
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <!-- An expander inside a card: its header is the card's own first line, not a button of its own. -->
+    <Style Selector="Expander /template/ ToggleButton#ExpanderHeader">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <!-- Its content panel takes both from the Expander itself (a template binding), where the theme's own styles can't outrank this. -->
+    <Style Selector="Expander">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Expander:down /template/ Border#ExpanderContent">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- The bar under the selected tab spans the whole header (the theme draws it only as wide as the text, which reads as an underlined link). The header's own padding is 14 px on each side. -->
+    <Style Selector="TabControl.tabs TabItem /template/ Border#PART_SelectedPipe">
+      <Setter Property="Margin" Value="-14,0" />
+      <Setter Property="Height" Value="3" />
+      <Setter Property="CornerRadius" Value="1.5,1.5,0,0" />
+    </Style>
+
+    <!-- A button that is only a click target around its content (a card that opens a page). -->
+    <Style Selector="Button.plain">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.plain:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.plain:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PageBackground" Color="#F7F8FA" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#EEF1F5" />
+          <SolidColorBrush x:Key="SidebarBorder" Color="#DCE0E6" />
+          <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="CardBorder" Color="#E2E6EC" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#5B6472" />
+          <!-- Status tones: dots, icons, headline. Dark enough on white to read as a mark, not just a tint. -->
+          <SolidColorBrush x:Key="ToneGreen" Color="#1E8E3E" />
+          <SolidColorBrush x:Key="ToneAmber" Color="#C77C02" />
+          <SolidColorBrush x:Key="ToneGrey" Color="#8A93A0" />
+          <SolidColorBrush x:Key="ToneRed" Color="#D93025" />
+
+          <!-- The theme's buttons are a flat 20 % black; these are the app's: a white face, a quiet outline. -->
+          <SolidColorBrush x:Key="ButtonBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F0F3F8" />
+          <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#E4E9F0" />
+          <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#F3F4F6" />
+          <SolidColorBrush x:Key="ButtonBorderBrush" Color="#CFD5DE" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#AEB8C6" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#9AA6B6" />
+          <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#E3E6EB" />
+          <SolidColorBrush x:Key="ButtonForeground" Color="#1B1F27" />
+          <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#1B1F27" />
+          <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#1B1F27" />
+          <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#9AA2AF" />
+
+          <SolidColorBrush x:Key="AccentButtonBackground" Color="#2F6FEB" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#2862D4" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#2155BA" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#A9C1F3" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrush" Color="#2F6FEB" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushPointerOver" Color="#2862D4" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#2155BA" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="#A9C1F3" />
+          <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#F4F7FD" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PageBackground" Color="#181A1F" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#121418" />
+          <SolidColorBrush x:Key="SidebarBorder" Color="#2A2E35" />
+          <SolidColorBrush x:Key="CardBackground" Color="#22252B" />
+          <SolidColorBrush x:Key="CardBorder" Color="#30343C" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#A3ABB8" />
+          <SolidColorBrush x:Key="ToneGreen" Color="#3FB950" />
+          <SolidColorBrush x:Key="ToneAmber" Color="#E3B341" />
+          <SolidColorBrush x:Key="ToneGrey" Color="#8B949E" />
+          <SolidColorBrush x:Key="ToneRed" Color="#F85149" />
+
+          <SolidColorBrush x:Key="ButtonBackground" Color="#2A2E36" />
+          <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#333843" />
+          <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#3B414D" />
+          <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#23262C" />
+          <SolidColorBrush x:Key="ButtonBorderBrush" Color="#3E434D" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#5A616E" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#6A7280" />
+          <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#2E3239" />
+          <SolidColorBrush x:Key="ButtonForeground" Color="#EEF1F5" />
+          <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#6E7683" />
+
+          <SolidColorBrush x:Key="AccentButtonBackground" Color="#3B78EA" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#5489F0" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#2F68D4" />
+          <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#2A3A5C" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrush" Color="#3B78EA" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushPointerOver" Color="#5489F0" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#2F68D4" />
+          <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="#2A3A5C" />
+          <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#7C8AA8" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

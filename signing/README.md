@@ -29,13 +29,13 @@ certutil -addstore -f "TrustedPublisher" TgwsOne-CodeSigning.cer
 ## Подписать релиз этим сертификатом
 
 ```powershell
-.\build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin _zapret\bin -Version 1.0.5.1 `
-  -Out dist\TgwsOne-1.0.5-selfsigned.msi `
+.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0 `
+  -Out dist\TgwsOne-2.0.0-selfsigned.msi `
   -Pfx signing\TgwsOne-CodeSigning.pfx -PfxPassword "<пароль>"
 ```
 
 Проверка:
 
 ```powershell
-Get-AuthenticodeSignature dist\TgwsOne-1.0.5-selfsigned.msi | Format-List Status, SignerCertificate
+Get-AuthenticodeSignature dist\TgwsOne-2.0.0-selfsigned.msi | Format-List Status, SignerCertificate
 ```

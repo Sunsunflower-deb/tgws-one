@@ -1,0 +1,78 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TgwsOne.ViewModels"
+        xmlns:v="using:TgwsOne.Views"
+        x:Class="TgwsOne.Views.FinderDialog"
+        x:DataType="vm:FinderViewModel"
+        Title="Подобрать лучшую стратегию"
+        Width="600"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBackground}">
+
+  <StackPanel Margin="24" Spacing="16">
+
+    <!-- Before the run: what it will do to the machine. -->
+    <StackPanel x:Name="ConfirmPanel" Spacing="20" IsVisible="{Binding IsConfirm}">
+      <TextBlock x:Name="ConfirmText" Text="{x:Static vm:FinderViewModel.ConfirmText}" TextWrapping="Wrap" LineHeight="20" />
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button x:Name="ConfirmCancelButton" Content="Отмена" MinWidth="96" IsCancel="True" Command="{Binding CancelCommand}" />
+        <Button x:Name="StartButton" Content="Начать подбор" Classes="accent" IsDefault="True" Command="{Binding StartCommand}" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- The run and its result. -->
+    <StackPanel x:Name="ResultPanel" Spacing="12" IsVisible="{Binding ShowTable}">
+      <Border Classes="card" Padding="16,12">
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="*,80,100,80,70" Margin="0,0,0,6">
+            <TextBlock Classes="caption" Text="Стратегия" />
+            <TextBlock Grid.Column="1" Classes="caption" Text="Telegram" />
+            <TextBlock Grid.Column="2" Classes="caption" Text="Cloudflare" />
+            <TextBlock Grid.Column="3" Classes="caption" Text="Время" />
+          </Grid>
+          <ItemsControl x:Name="RowList" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FinderRowViewModel">
+                <Grid ColumnDefinitions="*,80,100,80,70" Margin="0,4">
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="{Binding IsBest, Converter={x:Static v:FinderConverters.BoldIfBest}}" />
+                  <TextBlock Grid.Column="1" Text="{Binding TelegramText}" VerticalAlignment="Center" IsVisible="{Binding !HasError}" />
+                  <v:Icon Grid.Column="2" HorizontalAlignment="Left" Width="16" Height="16"
+                          IsVisible="{Binding !HasError}"
+                          Data="{Binding CloudflareOk, Converter={x:Static v:FinderConverters.CheckOrCross}}"
+                          Tone="{Binding CloudflareOk, Converter={x:Static v:FinderConverters.GreenOrRed}}" />
+                  <TextBlock Grid.Column="3" Text="{Binding TimeText}" VerticalAlignment="Center" IsVisible="{Binding !HasError}" />
+                  <TextBlock Grid.Column="1" Grid.ColumnSpan="3" Classes="caption" TextWrapping="Wrap"
+                             Text="{Binding ErrorLine}" IsVisible="{Binding HasError}" VerticalAlignment="Center" />
+                  <Border Grid.Column="4" Background="{DynamicResource ToneGreen}" CornerRadius="8" Padding="8,2"
+                          HorizontalAlignment="Right" VerticalAlignment="Center" IsVisible="{Binding IsBest}">
+                    <TextBlock Text="лучшая" FontSize="11" Foreground="White" />
+                  </Border>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <StackPanel x:Name="ProgressPanel" Spacing="6" IsVisible="{Binding IsRunning}">
+        <ProgressBar IsIndeterminate="True" Height="3" />
+        <TextBlock x:Name="ProgressText" Classes="caption" Text="{Binding Progress}" />
+      </StackPanel>
+
+      <TextBlock x:Name="VerdictText" TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding Verdict}"
+                 IsVisible="{Binding Verdict, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      <TextBlock x:Name="FinderErrorText" TextWrapping="Wrap" Foreground="{DynamicResource ToneRed}" Text="{Binding ErrorText}"
+                 IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button x:Name="StopButton" Content="Остановить" IsVisible="{Binding IsRunning}" Command="{Binding CancelCommand}" />
+        <Button x:Name="RestoreButton" Content="Вернуть как было" IsVisible="{Binding IsDone}" Command="{Binding RestoreCommand}" />
+        <Button x:Name="ApplyButton" Classes="accent" Content="{Binding ApplyText}" IsDefault="True"
+                IsVisible="{Binding HasBest}" Command="{Binding ApplyCommand}" />
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</Window>

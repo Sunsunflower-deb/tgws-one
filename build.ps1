@@ -1,20 +1,28 @@
 ﻿<#
-    Сборка TgwsOne.exe и установщика MSI.
+    Сборка MSI-установщика TgwsOne 2.x из уже собранных частей: приложения, движка прокси и обхода.
 
     Пример:
-      .\build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin _zapret\bin -Version 1.0.3.0
+      .\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0
 
     Требуется:
-      * csc.exe из .NET Framework 4.x (входит в Windows);
-      * WiX 5: dotnet tool install --global wix --version 5.*;
-      * бинарники upstream (движок прокси и zapret) — в репозитории их нет.
+      * WiX 5 и два его расширения:
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2 WixToolset.Firewall.wixext/5.0.2
+      * -AppDir — папка с TgwsOne.exe, zapret2\ и lists\ (на Linux: make build-win; на Windows: dotnet publish -r win-x64
+        --self-contained -p:PublishSingleFile=true, затем zapret2\fetch.ps1 и копирование zapret2\ и lists\ рядом);
+      * -Engine — tgws-engine.exe, его собирает engine\build-engine.ps1 (PyInstaller, только на Windows).
+
+    Пути без диска и без \\ отсчитываются от папки этого скрипта.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Engine,
-    [Parameter(Mandatory = $true)][string]$ZapretBin,
-    [string]$Version = "1.0.3.0",
+    [string]$AppDir = "out\publish\win-x64",
+    [string]$Engine = "out\engine\win-x64\tgws-engine.exe",
+    [string]$Version = "2.0.0.0",
     [string]$Out,
+    # Где собирать дерево для MSI. Должно быть на локальном диске: с сетевой папки (например, общей папки виртуальной
+    # машины) WiX читает сотни файлов в разы медленнее.
+    [string]$StageDir,
 
     # Подпись (необязательно): PFX-файл или отпечаток сертификата в хранилище/на токене.
     [string]$Pfx = $env:TGWS_SIGN_PFX,
@@ -25,11 +33,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$build = Join-Path $root "build"
-$stage = Join-Path $build "stage"
+
+function Resolve-Input([string]$path)
+{
+    if ([System.IO.Path]::IsPathRooted($path)) { return $path }
+    return Join-Path $root $path
+}
+
+if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "версия должна быть из четырёх чисел (2.0.0.0): $Version" }
+$AppDir = Resolve-Input $AppDir
+$Engine = Resolve-Input $Engine
+if (-not $StageDir) { $StageDir = Join-Path $root "build\stage" }
+$StageDir = Resolve-Input $StageDir
 
 $verShort = (($Version -split '\.') | Select-Object -First 3) -join '.'
 if (-not $Out) { $Out = Join-Path $root ("dist\TgwsOne-" + $verShort + ".msi") }
+$Out = Resolve-Input $Out
 
 # ---------- подпись ----------
 function Find-SignTool
@@ -80,79 +99,91 @@ function Sign-File([string]$path)
 }
 
 # ---------- проверки ----------
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
-if (-not (Test-Path $csc)) { throw "csc.exe (.NET Framework 4.x) не найден" }
-if (-not (Test-Path $Engine)) { throw "не найден движок прокси: $Engine" }
-if (-not (Test-Path (Join-Path $ZapretBin "winws.exe"))) { throw "в $ZapretBin нет winws.exe" }
+foreach ($rel in @("TgwsOne.exe", "zapret2\winws2.exe", "zapret2\WinDivert64.sys"))
+{
+    if (-not (Test-Path (Join-Path $AppDir $rel))) { throw "в $AppDir нет $rel (приложение и обход собирает make build-win)" }
+}
+if (-not (Get-ChildItem (Join-Path $AppDir "lists") -Filter *.txt -ErrorAction SilentlyContinue))
+{
+    throw "в $AppDir\lists нет списков *.txt"
+}
+if (-not (Test-Path $Engine)) { throw "не найден движок прокси: $Engine (его собирает engine\build-engine.ps1)" }
+foreach ($rel in @("installer\TgwsOne.wxs", "src\app.ico", "README.md", "LICENSE"))
+{
+    if (-not (Test-Path (Join-Path $root $rel))) { throw "не найден $rel рядом со скриптом" }
+}
 
 # ---------- staging ----------
-Write-Host "staging -> $stage"
-Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $stage, (Join-Path $stage "lists"), (Join-Path $stage "zapret\bin") | Out-Null
-
-$exe = Join-Path $stage "TgwsOne.exe"
-Write-Host "compile TgwsOne.exe"
-& $csc /nologo /target:winexe /platform:anycpu /utf8output /win32icon:"$root\src\app.ico" `
-    /out:$exe `
-    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Core.dll `
-    (Join-Path $root "src\TgwsOne.cs")
-if ($LASTEXITCODE -ne 0) { throw "ошибка компиляции ($LASTEXITCODE)" }
-
-Sign-File $exe
-
-Copy-Item $Engine (Join-Path $stage "TgWsProxy_windows.exe") -Force
-Copy-Item (Join-Path $root "src\app.ico") $stage -Force
-Copy-Item (Join-Path $root "README.md") $stage -Force
-Copy-Item (Join-Path $root "lists\*.txt") (Join-Path $stage "lists") -Force
-Copy-Item (Join-Path $ZapretBin "*") (Join-Path $stage "zapret\bin") -Force
-
-# ---------- генерация компонентов ----------
-function San([string]$s)
+# Папка для дерева стирается целиком, а путь к ней задаёт вызывающий: не позволяем указать на корень диска, на папку
+# скрипта, на папку приложения или на любую папку над ними (-StageDir C:\ и опечатки такого рода).
+$stageFull = [System.IO.Path]::GetFullPath($StageDir).TrimEnd('\') + '\'
+foreach ($protected in @($root, $AppDir, (Split-Path -Parent $Engine)))
 {
-    $r = [regex]::Replace($s, '[^A-Za-z0-9]', '_')
-    if ($r -match '^\d') { $r = '_' + $r }
-    return $r
-}
-
-$dirs = @(
-    @{ Path = $stage;                    Id = "INSTALLDIR" },
-    @{ Path = (Join-Path $stage "lists"); Id = "DIR_LISTS" },
-    @{ Path = (Join-Path $stage "zapret\bin"); Id = "DIR_ZAPRET_BIN" }
-)
-
-$sb = New-Object System.Text.StringBuilder
-foreach ($d in $dirs)
-{
-    foreach ($f in (Get-ChildItem $d.Path -File | Sort-Object Name))
+    $p = [System.IO.Path]::GetFullPath($protected).TrimEnd('\') + '\'
+    if ($p.StartsWith($stageFull, [System.StringComparison]::OrdinalIgnoreCase))
     {
-        $rel = $f.FullName.Substring($stage.Length + 1)
-        $id = San ($d.Id.ToLower() + "_" + $f.Name)
-        [void]$sb.AppendLine('      <Component Id="cmp_' + $id + '" Directory="' + $d.Id + '" Bitness="always64" Guid="*">')
-        [void]$sb.AppendLine('        <File Id="fil_' + $id + '" Source="$(var.StageDir)\' + $rel + '" KeyPath="yes" />')
-        [void]$sb.AppendLine('      </Component>')
+        throw "-StageDir $StageDir стёрла бы ${protected} — укажите отдельную папку для дерева сборки"
     }
 }
+Write-Host "staging -> $StageDir"
+Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
-$template = Get-Content (Join-Path $root "installer\TgwsOne.template.wxs") -Raw -Encoding UTF8
-$wxs = $template.Replace('<!--COMPONENTS-->', $sb.ToString().TrimEnd())
-$generated = Join-Path $build "TgwsOne.generated.wxs"
-[System.IO.File]::WriteAllText($generated, $wxs, (New-Object System.Text.UTF8Encoding($false)))
+# Всё из папки приложения, кроме отладочных символов (один libSkiaSharp.pdb — 80 МБ).
+& robocopy $AppDir $StageDir /E /XF *.pdb /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "robocopy: не удалось скопировать $AppDir ($LASTEXITCODE)" }
+
+Copy-Item $Engine (Join-Path $StageDir "tgws-engine.exe") -Force
+Copy-Item (Join-Path $root "README.md") $StageDir -Force
+Copy-Item (Join-Path $root "LICENSE") $StageDir -Force
+
+Sign-File (Join-Path $StageDir "TgwsOne.exe")
+Sign-File (Join-Path $StageDir "tgws-engine.exe")
 
 # ---------- MSI ----------
 $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
 $env:DOTNET_ROLL_FORWARD = "LatestMajor"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Out) | Out-Null
 
+# wix.exe — приложение-обёртка (apphost) .NET. На Windows без полной поддержки CET (нелатаная Windows 10, как образ сборочной
+# виртуальной машины, build 19045.2965) apphost .NET 9+/10 падает при старте: «Your Windows doesn't fully support CET»,
+# код 0x80131506; сам dotnet.exe при этом запускается нормально. Тогда wix запускается как `dotnet wix.dll` из папки
+# инструмента, с теми же аргументами. На обновлённой Windows (в том числе на раннерах GitHub Actions) срабатывает обычный путь.
+function Invoke-Wix([string[]]$WixArguments)
+{
+    if (-not (Get-Command wix -ErrorAction SilentlyContinue))
+    {
+        throw "wix не найден: dotnet tool install --global wix --version 5.0.2"
+    }
+    & wix @WixArguments
+    if ($LASTEXITCODE -ne -2146233082) { return }   # 0x80131506
+
+    $dll = Get-ChildItem (Join-Path $env:USERPROFILE ".dotnet\tools\.store\wix") -Recurse -Filter wix.dll -ErrorAction SilentlyContinue |
+           Select-Object -First 1
+    if (-not $dll) { throw "wix.exe не запускается (CET), а wix.dll для запуска через dotnet не найден" }
+    Write-Host "wix.exe не стартует (Windows без полной поддержки CET): запускаю как dotnet wix.dll"
+    & dotnet $dll.FullName @WixArguments
+}
+
 Write-Host "wix build -> $Out"
-& wix build -arch x64 `
-    -d Version=$Version `
-    -d StageDir="$stage" `
-    -o $Out `
-    $generated
+Invoke-Wix @(
+    "build", "-arch", "x64",
+    "-ext", "WixToolset.Util.wixext", "-ext", "WixToolset.Firewall.wixext",
+    "-d", "Version=$Version",
+    "-d", "StageDir=$StageDir",
+    "-d", "IconFile=$(Join-Path $root 'src\app.ico')",
+    "-pdbtype", "none",
+    "-o", $Out,
+    (Join-Path $root "installer\TgwsOne.wxs"))
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
+
+# Обновление с 1.x держится на таблице Upgrade без языка (см. installer\check-upgrade-table.ps1).
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "installer\check-upgrade-table.ps1") $Out
+if ($LASTEXITCODE -ne 0) { throw "таблица Upgrade в $Out не годится для обновления с 1.x" }
 
 Sign-File $Out
 
 $size = [math]::Round((Get-Item $Out).Length / 1MB, 2)
+$hash = (Get-FileHash $Out -Algorithm SHA256).Hash.ToLower()
 Write-Host "OK: $Out ($size MB)"
+Write-Host "sha256: $hash"

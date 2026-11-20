@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSI TgwsOne 2.x (WiX 5). Собирается build.ps1 (wix build -arch x64 -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext
+  -d Version=… -d StageDir=… -d IconFile=…). Служба Windows ставится самим MSI (ServiceInstall), пользовательских действий
+  (CustomAction) нет: всё, что нужно службе при первом запуске, она делает сама.
+
+  $(var.StageDir) — разложенное дерево: TgwsOne.exe, tgws-engine.exe, родные библиотеки интерфейса, zapret2\, lists\.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!--
+    Тот же UpgradeCode, что у 1.x: установка 2.0 заменяет 1.x (старая версия снимается RemoveExistingProducts).
+    Язык русский, кодовая страница базы 1251: имя службы и правила файрвола написаны по-русски, а в 1252 такие символы
+    не помещаются (WIX0311). Сообщения условий запуска остаются английскими.
+  -->
+  <Package Name="TgwsOne" Manufacturer="TgwsOne" Version="$(var.Version)" Language="1049" Codepage="1251"
+           UpgradeCode="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90" Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <SummaryInformation Description="TgwsOne: local MTProto proxy for Telegram and DPI bypass" Manufacturer="TgwsOne" />
+
+    <!--
+      Обновление с 1.x: тот же UpgradeCode, версия ниже нашей. Не <MajorUpgrade>: он переносит в таблицу Upgrade язык пакета (1049), а
+      MSI тогда ищет старый продукт только среди установленных на русском. 1.x собран на английском (1033), его не находили: FindRelatedProducts
+      молчал, RemoveExistingProducts ничего не делал, и после «обновления» стояли оба продукта (проверка в Windows-ВМ, SP5). Язык здесь не
+      задан вовсе, так что подходит любой.
+    -->
+    <Upgrade Id="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90">
+      <UpgradeVersion Property="WIX_DOWNGRADE_DETECTED" Minimum="$(var.Version)" IncludeMinimum="no" OnlyDetect="yes" />
+      <UpgradeVersion Property="WIX_UPGRADE_DETECTED" Maximum="$(var.Version)" IncludeMaximum="no" MigrateFeatures="yes" />
+    </Upgrade>
+    <Launch Condition="NOT WIX_DOWNGRADE_DETECTED" Message="A newer version of TgwsOne is already installed." />
+    <InstallExecuteSequence>
+      <RemoveExistingProducts After="InstallValidate" />
+    </InstallExecuteSequence>
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Icon Id="AppIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!--
+      Номер сборки берём из реестра, а не из VersionNT: на новых сборках Windows (26H2) msiexec отдаёт VersionNT=603 из-за
+      appcompat, и проверка по VersionNT ложно срабатывает даже на Windows 11 (урок 1.0.5). 17763 — Windows 10 1809.
+      «Installed OR»: удалять уже установленное нужно и на системе, которая условию не отвечает.
+    -->
+    <Property Id="TGWS_BUILD">
+      <RegistrySearch Id="RegBuildNumber" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR VersionNT64" Message="TgwsOne requires 64-bit Windows." />
+    <Launch Condition="Installed OR TGWS_BUILD &gt;= 17763" Message="TgwsOne requires Windows 10 version 1809 (build 17763) or newer." />
+
+    <!--
+      Что держит файлы, пока их заменяют или удаляют. Restart Manager достаёт только приложения в сеансе службы установщика, а окно
+      TgwsOne и движок прокси работают в сеансе пользователя (и 1.x тоже: TgwsOne.exe с тем же именем файла и TgWsProxy_windows.exe):
+      обновление с работающим приложением кончалось кодом 3010 и половинчатым состоянием, удаление оставляло процесс (проверка в
+      Windows-ВМ, SP5). Только наши файлы по именам. winws.exe и winws2.exe сюда не входят: у пользователя может быть свой zapret в другой
+      папке; 1.x-шный winws из старой папки закрывает сама служба (LegacyMigration), а winws2 — служба же.
+    -->
+    <util:CloseApplication Id="CloseTgwsOne" Target="TgwsOne.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+    <util:CloseApplication Id="CloseTgwsEngine" Target="tgws-engine.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+    <util:CloseApplication Id="CloseOldProxy" Target="TgWsProxy_windows.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="TgwsOne" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="DIR_MENU" Name="TgwsOne" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="TgwsOne" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="cmp_app" />
+      <ComponentRef Id="cmp_engine" />
+      <ComponentRef Id="cmp_shortcut" />
+      <ComponentRef Id="cmp_desktop" />
+    </Feature>
+
+    <!-- Всё дерево, кроме двух исполняемых файлов, у которых свои компоненты (служба и правило файрвола садятся на них). -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLDIR">
+      <Files Include="$(var.StageDir)\**">
+        <Exclude Files="$(var.StageDir)\TgwsOne.exe" />
+        <Exclude Files="$(var.StageDir)\tgws-engine.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <!--
+      Служба обхода: всегда работает, от LocalSystem; ею владеет winws2, пользователь управляет ею через локальный канал
+      без повышения прав. Самовосстановление: три рестарта подряд, счётчик сбоев сбрасывается через сутки.
+    -->
+    <Component Id="cmp_app" Directory="INSTALLDIR">
+      <File Id="fil_TgwsOne" Source="$(var.StageDir)\TgwsOne.exe" KeyPath="yes" />
+      <ServiceInstall Id="svc_TgwsOneZapret" Name="TgwsOneZapret"
+                      DisplayName="TgwsOne: обход DPI (zapret2)"
+                      Description="Обход блокировок для Telegram: запускает zapret2 и принимает команды от приложения TgwsOne."
+                      Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Arguments="--service">
+        <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart"
+                            ResetPeriodInDays="1" RestartServiceDelayInSeconds="5" />
+      </ServiceInstall>
+      <ServiceControl Id="ctl_TgwsOneZapret" Name="TgwsOneZapret" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      <!--
+        Драйвер WinDivert здесь НЕ останавливаем и не удаляем. Он ставится сам при первом запуске winws2 и после выхода остаётся
+        загруженным, но служба с этим именем общая: ею пользуются и чужие программы (GoodbyeDPI, другие сборки zapret). Проверка в
+        Windows-ВМ (SP5): остановка занятого драйвера оставляет его в STOP_PENDING, и новая программа на WinDivert не стартует (код 177),
+        пока не закроются чужие дескрипторы; а без остановки обновление 2.x -> 2.y идёт без перезагрузки (WinDivert64.sys заменяется при
+        загруженном драйвере), и после удаления драйвер просто доживает в памяти до перезагрузки.
+      -->
+    </Component>
+
+    <!-- Прокси для телефона: входящие TCP-соединения к движку только из своей подсети и только в частной сети. -->
+    <Component Id="cmp_engine" Directory="INSTALLDIR">
+      <File Id="fil_TgwsEngine" Source="$(var.StageDir)\tgws-engine.exe" KeyPath="yes" />
+      <fw:FirewallException Id="fw_TgwsEngine" Name="TgwsOne: прокси для телефона" File="fil_TgwsEngine"
+                            Protocol="tcp" Scope="localSubnet" Profile="private" IgnoreFailure="yes" />
+    </Component>
+
+    <Component Id="cmp_shortcut" Directory="DIR_MENU">
+      <Shortcut Id="scStartMenu" Name="TgwsOne" Description="Local Telegram proxy"
+                Target="[INSTALLDIR]TgwsOne.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon" />
+      <RemoveFolder Id="rmMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\TgwsOne" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="cmp_desktop" Directory="DesktopFolder">
+      <Shortcut Id="scDesktop" Name="TgwsOne" Description="Local Telegram proxy"
+                Target="[INSTALLDIR]TgwsOne.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon" />
+      <RegistryValue Root="HKLM" Key="Software\TgwsOne" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

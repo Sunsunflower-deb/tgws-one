@@ -1,0 +1,132 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.ViewModels"
+             xmlns:v="using:TgwsOne.Views"
+             x:Class="TgwsOne.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="720">
+
+      <TextBlock Text="Настройки" FontSize="22" FontWeight="SemiBold" />
+
+      <!-- Подключение -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <TextBlock Classes="caption" Text="Подключение" />
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Порт" />
+            <TextBox x:Name="PortBox" Width="140" HorizontalAlignment="Left" Text="{Binding Port}" />
+            <TextBlock x:Name="PortErrorText" Classes="error" Text="{Binding PortError}"
+                       IsVisible="{Binding PortError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <CheckBox x:Name="LanCheck" Content="Разрешить подключение с телефона в этой сети" IsChecked="{Binding LanSharing}" />
+            <StackPanel x:Name="LanPanel" Orientation="Horizontal" Spacing="10" Margin="28,0,0,0" IsVisible="{Binding LanSharing}">
+              <TextBlock Classes="caption" Text="Адрес:" VerticalAlignment="Center" />
+              <ComboBox x:Name="LanAddressBox" MinWidth="240" ItemsSource="{Binding LanAddresses}"
+                        SelectedItem="{Binding SelectedLanAddress}" IsVisible="{Binding !ShowNoAddress}" />
+              <TextBlock x:Name="NoAddressText" Classes="caption" TextWrapping="Wrap"
+                         Text="{x:Static vm:SettingsViewModel.NoAddressText}" IsVisible="{Binding ShowNoAddress}" />
+              <Button x:Name="ShowQrButton" Content="Показать QR…" Command="{Binding ShowQrCommand}"
+                      IsVisible="{Binding !ShowNoAddress}" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Приложение -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="caption" Text="Приложение" />
+          <CheckBox x:Name="AutostartCheck" Content="Запускать при входе в систему" IsChecked="{Binding AutostartOn}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Секрет и ссылка -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="caption" Text="Секрет и ссылка" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="Секрет" VerticalAlignment="Center" />
+            <TextBlock x:Name="SecretValue" Text="{Binding SecretText}" VerticalAlignment="Center"
+                       FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="ShowSecretButton" Content="Показать" Command="{Binding ToggleSecretCommand}" />
+            <Button x:Name="NewSecretButton" Content="Новый…" Command="{Binding NewSecretCommand}" />
+            <Button x:Name="CopyLinkButton" Content="Копировать ссылку" Command="{Binding CopyLinkCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Дополнительно -->
+      <Border Classes="card" Padding="4,2">
+        <Expander x:Name="AdvancedExpander" Header="Дополнительно" IsExpanded="{Binding IsAdvancedOpen}">
+          <StackPanel Spacing="14" Margin="12,8,12,12">
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="Хост" />
+              <TextBox x:Name="HostBox" Width="240" HorizontalAlignment="Left" Text="{Binding Host}" IsEnabled="{Binding HostEnabled}" />
+              <TextBlock x:Name="HostErrorText" Classes="error" Text="{Binding HostError}"
+                         IsVisible="{Binding HostError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="DC → IP" />
+              <TextBox x:Name="DcMapBox" AcceptsReturn="True" TextWrapping="Wrap" Height="80" Text="{Binding DcMap}" />
+              <TextBlock x:Name="DcMapErrorText" Classes="error" Text="{Binding DcMapError}" TextWrapping="Wrap"
+                         IsVisible="{Binding DcMapError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+
+            <WrapPanel>
+              <CheckBox Content="CF-прокси" IsChecked="{Binding CfProxy}" Margin="0,0,20,0" />
+              <CheckBox Content="HTTP/2" IsChecked="{Binding H2}" Margin="0,0,20,0" />
+              <CheckBox Content="Без TLS (порт 80)" IsChecked="{Binding NoSecure}" Margin="0,0,20,0" />
+              <CheckBox Content="Подробный журнал прокси" IsChecked="{Binding Verbose}" />
+            </WrapPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="Свои CF-домены" />
+              <TextBox x:Name="CfDomainsBox" Text="{Binding CfDomains}" />
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Text="Worker-домены" />
+              <TextBox x:Name="WorkerDomainsBox" Text="{Binding WorkerDomains}" />
+            </StackPanel>
+
+            <WrapPanel>
+              <StackPanel Spacing="4" Margin="0,0,24,0">
+                <TextBlock Text="Буфер, КБ" />
+                <TextBox x:Name="BufKbBox" Width="120" Text="{Binding BufKb}" />
+                <TextBlock x:Name="BufKbErrorText" Classes="error" Text="{Binding BufKbError}" MaxWidth="180" TextWrapping="Wrap"
+                           IsVisible="{Binding BufKbError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+              <StackPanel Spacing="4" Margin="0,0,24,0">
+                <TextBlock Text="Пул WS" />
+                <TextBox x:Name="PoolSizeBox" Width="120" Text="{Binding PoolSize}" />
+                <TextBlock x:Name="PoolSizeErrorText" Classes="error" Text="{Binding PoolSizeError}" MaxWidth="180" TextWrapping="Wrap"
+                           IsVisible="{Binding PoolSizeError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Text="Макс. лог, МБ" />
+                <TextBox x:Name="LogMaxMbBox" Width="120" Text="{Binding LogMaxMb}" />
+                <TextBlock x:Name="LogMaxMbErrorText" Classes="error" Text="{Binding LogMaxMbError}" MaxWidth="180" TextWrapping="Wrap"
+                           IsVisible="{Binding LogMaxMbError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+            </WrapPanel>
+          </StackPanel>
+        </Expander>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Spacing="14">
+        <Button x:Name="SaveButton" Classes="accent" Content="Сохранить" Padding="28,10" Command="{Binding SaveCommand}" />
+        <TextBlock x:Name="NoticeText" Classes="caption" VerticalAlignment="Center" Text="{Binding Notice}"
+                   IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
