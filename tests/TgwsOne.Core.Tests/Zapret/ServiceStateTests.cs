@@ -1,4 +1,4 @@
-using TgwsOne.Core.Zapret;
+﻿using TgwsOne.Core.Zapret;
 
 namespace TgwsOne.Core.Tests.Zapret;
 
@@ -21,10 +21,26 @@ public class ServiceStateTests
         new ServiceState(false, "split").Save(ini);
 
         Assert.Equal(new ServiceState(false, "split"), ServiceState.Load(ini));
-        Assert.Equal("[zapret]\nenabled=0\nstrategy=split\n", File.ReadAllText(ini).Replace("\r\n", "\n"));
+        Assert.Equal("[zapret]\nenabled=0\nstrategy=split\nscope=telegram\n", File.ReadAllText(ini).Replace("\r\n", "\n"));
 
         new ServiceState(true, "custom:mine").Save(ini);
         Assert.Equal(new ServiceState(true, "custom:mine"), ServiceState.Load(ini));
+    }
+
+    [Theory]
+    [InlineData("scope=all", ZapretScope.All)]
+    [InlineData("scope=ALL", ZapretScope.All)]
+    [InlineData("scope=telegram", ZapretScope.Telegram)]
+    [InlineData("scope=junk", ZapretScope.Telegram)]
+    [InlineData("", ZapretScope.Telegram)]
+    public void Scope_Parsing(string line, ZapretScope expected)
+    {
+        using var tmp = new TempDir();
+        string ini = tmp.Combine("state.ini");
+        File.WriteAllText(ini, $"[zapret]\n{line}\n");
+
+        // A missing or unknown key must never widen the bypass: everything but "all" is the narrow scope.
+        Assert.Equal(expected, ServiceState.Load(ini).Scope);
     }
 
     [Fact]

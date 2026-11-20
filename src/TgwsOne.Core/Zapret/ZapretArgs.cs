@@ -1,4 +1,4 @@
-namespace TgwsOne.Core.Zapret;
+﻿namespace TgwsOne.Core.Zapret;
 
 /// <summary>The four list files a run reads (full paths): the targets are admin-owned, the exclusions service-written.</summary>
 public sealed record ZapretLists(string CloudflareIps, string TelegramHosts, string ExcludeHosts, string ExcludeIps);
@@ -23,7 +23,8 @@ public static class ZapretArgs
     /// <paramref name="custom"/> is the loaded desync part when <paramref name="strategyId"/> is <c>custom:&lt;name&gt;</c>.
     /// </summary>
     public static IReadOnlyList<string> Build(OsKind os, ZapretBundle bundle, ZapretLists lists, string strategyId,
-                                              string stateDir, DesyncPart? custom = null, string? debugFile = null)
+                                              string stateDir, DesyncPart? custom = null, string? debugFile = null,
+                                              ZapretScope scope = ZapretScope.Telegram)
     {
         bool auto = strategyId == BuiltInStrategies.Auto;
         var blobs = new List<Blob>();
@@ -89,12 +90,17 @@ public static class ZapretArgs
 
         argv.Add(os == OsKind.Windows ? "--wf-tcp-out=443" : $"--qnum={QueueNum}");
 
-        argv.AddRange(["--filter-tcp=443", "--filter-l7=tls",
-            $"--ipset={lists.CloudflareIps}",
-            $"--ipset-exclude={lists.ExcludeIps}",
-            $"--hostlist-exclude={lists.ExcludeHosts}"]);
-        argv.AddRange(body);
-        argv.Add("--new");
+        // The wide scope (opt-in) starts with every Cloudflare address: other applications — browsers first of all —
+        // are affected by it too. The narrow default (Telegram only) skips that profile entirely.
+        if (scope == ZapretScope.All)
+        {
+            argv.AddRange(["--filter-tcp=443", "--filter-l7=tls",
+                $"--ipset={lists.CloudflareIps}",
+                $"--ipset-exclude={lists.ExcludeIps}",
+                $"--hostlist-exclude={lists.ExcludeHosts}"]);
+            argv.AddRange(body);
+            argv.Add("--new");
+        }
         argv.AddRange(["--filter-tcp=443", "--filter-l7=tls",
             $"--hostlist={lists.TelegramHosts}",
             $"--hostlist-exclude={lists.ExcludeHosts}"]);

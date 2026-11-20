@@ -1,7 +1,7 @@
-namespace TgwsOne.Core.Zapret;
+﻿namespace TgwsOne.Core.Zapret;
 
-/// <summary>What the service remembers across restarts: whether the bypass is on and which strategy it uses.</summary>
-public sealed record ServiceState(bool Enabled, string Strategy)
+/// <summary>What the service remembers across restarts: whether the bypass is on, which strategy it uses and what it applies to.</summary>
+public sealed record ServiceState(bool Enabled, string Strategy, ZapretScope Scope = ZapretScope.Telegram)
 {
     private const string Section = "zapret";
 
@@ -16,7 +16,10 @@ public sealed record ServiceState(bool Enabled, string Strategy)
         string? strategy = ini.Get(Section, "strategy")?.Trim();
         return new ServiceState(
             Enabled: !(enabled == "0" || string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase)),
-            Strategy: string.IsNullOrEmpty(strategy) ? BuiltInStrategies.Auto : strategy);
+            Strategy: string.IsNullOrEmpty(strategy) ? BuiltInStrategies.Auto : strategy,
+            // An older 2.0.0 state file has no scope key: that install had the wide bypass, but the default now is
+            // Telegram only, so a missing key means the narrow scope (the user can widen it on the page).
+            Scope: ZapretScopes.Parse(ini.Get(Section, "scope")));
     }
 
     /// <summary>
@@ -28,6 +31,7 @@ public sealed record ServiceState(bool Enabled, string Strategy)
         var ini = IniFile.Load(iniPath);
         ini.Set(Section, "enabled", Enabled ? "1" : "0");
         ini.Set(Section, "strategy", Strategy);
+        ini.Set(Section, "scope", Scope.ToWire());
         ini.Save(privateDirectory: false);
     }
 }

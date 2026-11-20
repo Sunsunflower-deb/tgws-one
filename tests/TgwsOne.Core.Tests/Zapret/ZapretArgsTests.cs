@@ -1,4 +1,4 @@
-using TgwsOne.Core.Zapret;
+﻿using TgwsOne.Core.Zapret;
 
 namespace TgwsOne.Core.Tests.Zapret;
 
@@ -15,8 +15,8 @@ public class ZapretArgsTests
     private static ZapretBundle LinuxBundle() => ZapretBundle.Locate(OsKind.Linux, "/opt/tgwsone", _ => null);
     private static ZapretBundle WindowsBundle() => ZapretBundle.Locate(OsKind.Windows, @"C:\Program Files\TgwsOne", _ => null);
 
-    private static string[] Linux(string id, DesyncPart? custom = null, string? debug = null)
-        => [.. ZapretArgs.Build(OsKind.Linux, LinuxBundle(), LinuxLists, id, "/var/lib/tgwsone", custom, debug)];
+    private static string[] Linux(string id, DesyncPart? custom = null, string? debug = null, ZapretScope scope = ZapretScope.All)
+        => [.. ZapretArgs.Build(OsKind.Linux, LinuxBundle(), LinuxLists, id, "/var/lib/tgwsone", custom, debug, scope)];
 
     [Fact]
     public void Build_Linux_FakeTls_ExactArgv()
@@ -52,7 +52,7 @@ public class ZapretArgsTests
     [Fact]
     public void Build_Windows_FakeTls_ExactArgv()
     {
-        string[] argv = [.. ZapretArgs.Build(OsKind.Windows, WindowsBundle(), WindowsLists, "fake-tls", @"C:\ProgramData\TgwsOne\state")];
+        string[] argv = [.. ZapretArgs.Build(OsKind.Windows, WindowsBundle(), WindowsLists, "fake-tls", @"C:\ProgramData\TgwsOne\state", scope: ZapretScope.All)];
         Assert.Equal(
         [
             @"--lua-init=@C:\Program Files\TgwsOne\zapret2\lua\zapret-lib.lua",
@@ -129,10 +129,30 @@ public class ZapretArgsTests
     [Fact]
     public void Build_Windows_Auto_StateDirUsesBackslashes()
     {
-        string[] argv = [.. ZapretArgs.Build(OsKind.Windows, WindowsBundle(), WindowsLists, "auto", @"C:\ProgramData\TgwsOne\state")];
+        string[] argv = [.. ZapretArgs.Build(OsKind.Windows, WindowsBundle(), WindowsLists, "auto", @"C:\ProgramData\TgwsOne\state", scope: ZapretScope.All)];
         Assert.Contains(@"--writable=C:\ProgramData\TgwsOne\state\zapret-state", argv);
         Assert.Contains(@"--lua-init=@C:\Program Files\TgwsOne\zapret2\lua\tgws-state.lua", argv);
         Assert.Contains("--wf-tcp-out=443", argv);
+    }
+
+    [Fact]
+    public void Build_DefaultScope_IsTelegramOnly_NoCloudflareProfile()
+    {
+        // The default is the narrow scope: only Telegram hosts, no --ipset (Cloudflare) profile and therefore no --new.
+        string[] argv = Linux("split", scope: ZapretScope.Telegram);
+
+        Assert.Contains("--hostlist=/etc/tgwsone/lists/telegram.txt", argv);
+        Assert.DoesNotContain(argv, a => a.StartsWith("--ipset=", StringComparison.Ordinal));
+        Assert.DoesNotContain("--new", argv);
+    }
+
+    [Fact]
+    public void Build_WideScope_AddsTheCloudflareProfile()
+    {
+        string[] argv = Linux("split", scope: ZapretScope.All);
+
+        Assert.Contains("--ipset=/etc/tgwsone/lists/cloudflare-ips.txt", argv);
+        Assert.Contains("--new", argv);
     }
 
     [Fact]

@@ -76,6 +76,11 @@ internal sealed partial class BypassViewModel : PageViewModel
     private string? _customFallback;
 
     [ObservableProperty] private bool _bypassOn;
+
+    /// <summary>Whether the bypass also covers every application (Cloudflare ranges), not just Telegram. Off by default.</summary>
+    [ObservableProperty] private bool _includeAllApps;
+
+    private bool _applyingSnapshot;
     [ObservableProperty] private string _statusLine = "";
     [ObservableProperty] private Tone _statusTone = Tone.Grey;
     [ObservableProperty] private string _currentStrategy = BuiltInStrategies.Auto;
@@ -140,6 +145,9 @@ internal sealed partial class BypassViewModel : PageViewModel
         if (s.Bypass is not { } bypass) return;
 
         BypassOn = bypass.Enabled;
+        _applyingSnapshot = true;
+        IncludeAllApps = string.Equals(bypass.Scope, ZapretScopes.All, StringComparison.OrdinalIgnoreCase);
+        _applyingSnapshot = false;
         if (IsBusy) return;   // an answer is on its way; what it says about the choice wins over this older snapshot
 
         CurrentStrategy = bypass.Strategy;
@@ -195,6 +203,31 @@ internal sealed partial class BypassViewModel : PageViewModel
         string command = BypassOn ? ControlCommands.Off : ControlCommands.On;
         await Run(() => _control.SendAsync(new ControlRequest(command)));
         OnPropertyChanged(nameof(BypassOn));   // a switch that was clicked has flipped itself; this puts it back when the service said no
+    }
+
+    /// <summary>Widens or narrows the scope: the snapshot fills the property, so only a click reaches here.</summary>
+    partial void OnIncludeAllAppsChanged(bool value)
+    {
+        if (!_applyingSnapshot) _ = ChangeScopeAsync(value);
+    }
+
+    private async Task ChangeScopeAsync(bool all)
+    {
+        if (!CanChange)
+        {
+            _applyingSnapshot = true;
+            IncludeAllApps = !all;
+            _applyingSnapshot = false;
+            return;
+        }
+
+        await Run(() => _control.SendAsync(new ControlRequest(ControlCommands.Scope,
+            Value: all ? ZapretScopes.All : ZapretScopes.Telegram)));
+
+        // Whatever the service answered, the switch shows what it now has: a refusal comes back as the old value.
+        _applyingSnapshot = true;
+        OnPropertyChanged(nameof(IncludeAllApps));
+        _applyingSnapshot = false;
     }
 
     private async Task ChooseAsync(StrategyOption option)

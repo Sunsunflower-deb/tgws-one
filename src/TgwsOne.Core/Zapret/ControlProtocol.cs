@@ -13,16 +13,20 @@ public static class ControlCommands
     public const string Strategies = "strategies";
     public const string Exclusions = "exclusions";
     public const string SetExclusions = "set-exclusions";
+    /// <summary>Widens or narrows what the bypass applies to (<see cref="ZapretScope"/>), without touching the on/off state.</summary>
+    public const string Scope = "scope";
 }
 
-public sealed record ControlRequest(string Cmd, string? Strategy = null, IReadOnlyList<string>? Hosts = null, IReadOnlyList<string>? Ips = null);
+public sealed record ControlRequest(string Cmd, string? Strategy = null, IReadOnlyList<string>? Hosts = null,
+                                      IReadOnlyList<string>? Ips = null, string? Value = null);
 
 /// <summary>
 /// <c>State</c> is one of disabled, starting, running, backoff, error. <c>Auto</c> (per host, sorted) is only
 /// there while the strategy is <c>auto</c>.
 /// </summary>
 public sealed record ZapretStatus(bool Enabled, string Strategy, string State, int? Pid, DateTimeOffset? Since,
-                                  int Restarts, string? LastError, string Bundle, IReadOnlyList<AutoHost>? Auto = null);
+                                  int Restarts, string? LastError, string Bundle, IReadOnlyList<AutoHost>? Auto = null,
+                                  string Scope = ZapretScopes.Telegram);
 
 /// <summary><c>Kind</c> is "builtin" or "custom".</summary>
 public sealed record StrategyItem(string Id, string Kind);
@@ -61,7 +65,7 @@ public static class ControlProtocol
     private static readonly HashSet<string> Known =
     [
         ControlCommands.Status, ControlCommands.On, ControlCommands.Off, ControlCommands.Use,
-        ControlCommands.Strategies, ControlCommands.Exclusions, ControlCommands.SetExclusions,
+        ControlCommands.Strategies, ControlCommands.Exclusions, ControlCommands.SetExclusions, ControlCommands.Scope,
     ];
 
     public static string Serialize(ControlRequest r) => JsonSerializer.Serialize(r, ControlJson.Default.ControlRequest);
@@ -95,6 +99,8 @@ public static class ControlProtocol
         {
             ControlCommands.Use => !string.IsNullOrEmpty(r.Strategy),
             ControlCommands.SetExclusions => r.Hosts is { } h && r.Ips is { } i && !h.Contains(null!) && !i.Contains(null!),
+            // Both scopes are accepted as written; anything else is the narrow default, never the wide one.
+            ControlCommands.Scope => r.Value is { Length: > 0 }, 
             _ => true,
         };
         if (!wellFormed) return null;

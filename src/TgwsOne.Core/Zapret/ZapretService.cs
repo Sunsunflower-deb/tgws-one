@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 
 namespace TgwsOne.Core.Zapret;
 
@@ -79,6 +79,8 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
                     Hosts: Exclusions.Read(_paths.Lists.ExcludeHosts), Ips: Exclusions.Read(_paths.Lists.ExcludeIps));
             case ControlCommands.SetExclusions:
                 return await SetExclusionsAsync(request.Hosts!, request.Ips!);
+            case ControlCommands.Scope:
+                return await ScopeAsync(ZapretScopes.Parse(request.Value), ct);
             default:
                 return new ControlResponse(false, ControlProtocol.UnknownCommand);
         }
@@ -129,6 +131,17 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
         }
         _log.Write($"служба: стратегия {id}");
         return Ok();
+    }
+
+    private async Task<ControlResponse> ScopeAsync(ZapretScope scope, CancellationToken ct)
+    {
+        if (_state.Scope == scope) return Ok();
+        if (!TrySave(_state with { Scope = scope }, out string? saveError)) return Fail(saveError);
+
+        // The scope changes the filter, so a running runner has to be replaced: apply the same state again.
+        string? error = _state.Enabled ? await ApplyStateAsync(ct) : null;
+        _log.Write($"служба: область обхода — {scope.ToWire()}");
+        return error == null ? Ok() : Fail(error);
     }
 
     private ControlResponse ListStrategies()
@@ -206,7 +219,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
         {
             return (null, "неизвестная стратегия");
         }
-        return (ZapretArgs.Build(_os, _bundle, _paths.Lists, id, _paths.StateDir, custom, _debugFile), null);
+        return (ZapretArgs.Build(_os, _bundle, _paths.Lists, id, _paths.StateDir, custom, _debugFile, _state.Scope), null);
     }
 
     private ControlResponse Ok() => new(true, Status: BuildStatus());
@@ -225,7 +238,7 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
 
         IReadOnlyList<AutoHost>? auto = _state.Strategy == BuiltInStrategies.Auto ? AutoState.Read(_paths.AutoStateFile) : null;
         return new ZapretStatus(_state.Enabled, _state.Strategy, state, _runner.Pid, _runner.Since,
-            _runner.Restarts, lastError, _bundle.Version, auto);
+            _runner.Restarts, lastError, _bundle.Version, auto, _state.Scope.ToWire());
     }
 
     // The in-memory state changes only once it is on disk, so the two never disagree about what was asked for.
