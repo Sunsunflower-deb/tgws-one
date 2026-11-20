@@ -51,12 +51,23 @@ build-win:
 # tests are headless, the cross-process ones pass explicit switches, the D-Bus ones start a bus of their own).
 NO_DISPLAY := env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS
 
+# A test run writes nothing to the real profile: the test host gets throwaway XDG directories (-e reaches the host only; HOME and
+# the dotnet CLI itself are left alone, the NuGet cache and config live there), and tools/leak-check.sh fails the run loudly if
+# the real autostart entry, config, state or data of TgwsOne changed anyway (TGWS_TEST_SANDBOX=1 lets the tests check they got the sandbox). $(1) is the project, $(2) extra dotnet test arguments.
+define SANDBOXED_TEST
+	@d=$$(mktemp -d) && mkdir -p $$d/config $$d/state $$d/data $$d/cache $$d/run \
+	&& tools/leak-check.sh snapshot $$d/leak \
+	&& { $(NO_DISPLAY) $(3) dotnet test $(1) $(2) \
+	       -e XDG_CONFIG_HOME=$$d/config -e XDG_STATE_HOME=$$d/state -e XDG_DATA_HOME=$$d/data -e XDG_CACHE_HOME=$$d/cache -e XDG_RUNTIME_DIR=$$d/run -e TGWS_TEST_SANDBOX=1; \
+	     rc=$$?; tools/leak-check.sh verify $$d/leak || rc=1; rm -rf $$d; exit $$rc; }
+endef
+
 test:
-	$(NO_DISPLAY) dotnet test tests/TgwsOne.Core.Tests
-	$(NO_DISPLAY) dotnet test tests/TgwsOne.App.Tests
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,,)
 
 test-engine:
-	$(NO_DISPLAY) TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine dotnet test tests/TgwsOne.Core.Tests --filter "FullyQualifiedName~RealEngine"
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine)
 
 run:
 	$(APP_BIN) $(ARGS)
