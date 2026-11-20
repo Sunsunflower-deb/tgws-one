@@ -159,25 +159,42 @@ service() {
 port_base=18500
 scene_no=0
 
-# top-left corner of the first visible window whose title matches <pattern>: prints "X Y"
-window_origin() {
-    local id
-    id=$(xdotool search --onlyvisible --name "$1" 2>/dev/null | head -1)
-    [ -n "$id" ] || return 1
-    xdotool getwindowgeometry --shell "$id" | awk -F= '/^X=/{x=$2} /^Y=/{y=$2} END{print x, y}'
-}
+# top-left corner of a window: prints "X Y"
+origin_of() { xdotool getwindowgeometry --shell "$1" | awk -F= '/^X=/{x=$2} /^Y=/{y=$2} END{print x, y}'; }
 
 # position of the main window (title exactly «TgwsOne»): sets wx wy
-main_geometry() { read -r wx wy < <(window_origin '^TgwsOne$') && [ -n "$wx" ]; }
+main_geometry() {
+    local id
+    id=$(xdotool search --onlyvisible --name '^TgwsOne$' 2>/dev/null | head -1)
+    [ -n "$id" ] || return 1
+    read -r wx wy < <(origin_of "$id")
+}
 
-# position of another window by (part of) its title: sets dx dy
-dialog_geometry() { read -r dx dy < <(window_origin "$1") && [ -n "$dx" ]; }
+# position of the newest dialog: the last visible window of the app's class that is not the main one (found by class, not by
+# title: a regular expression over Cyrillic text does not match in every locale). Sets dx dy.
+dialog_geometry() {
+    local main id
+    main=$(xdotool search --onlyvisible --name '^TgwsOne$' 2>/dev/null | head -1)
+    id=$(xdotool search --onlyvisible --class 'TgwsOne' 2>/dev/null | grep -v -x "${main:-none}" | tail -1)
+    [ -n "$id" ] || return 1
+    read -r dx dy < <(origin_of "$id")
+}
 
 # clicks at a point given relative to the main window / to the last dialog
 click_main() { main_geometry && xdotool mousemove $((wx + $1)) $((wy + $2)) && sleep 0.3 && xdotool click 1 && sleep "${3:-1}"; }
 click_dialog() { xdotool mousemove $((dx + $1)) $((dy + $2)) && sleep 0.3 && xdotool click 1 && sleep "${3:-1}"; }
 hover_main() { main_geometry && xdotool mousemove $((wx + $1)) $((wy + $2)) && sleep "${3:-1}"; }
 type_text() { xdotool type --delay 40 -- "$1" && sleep 0.5; }
+
+# scrolls the page under the pointer by <notches> wheel clicks (positive: down)
+scroll_main() {
+    main_geometry || return 1
+    xdotool mousemove $((wx + 500)) $((wy + 300))
+    sleep 0.3
+    local i
+    for ((i = 0; i < $1; i++)); do xdotool click 5; sleep 0.05; done
+    sleep 0.8
+}
 
 # the sidebar: the five sections, 42 px apart
 nav() {
@@ -234,8 +251,14 @@ run_scene() {
 setup_service() { service start; }
 setup_plain() { :; }
 setup_no_engine() { export TGWS_ENGINE=/nonexistent/tgws-engine; service start; }
+# the engine dies 100 ms after every start: the service restarts it with a backoff («перезапуск после сбоя…»)
 setup_bypass_crash() {
     printf 'crash_after_ms=100\n' >"$TGWS_SERVICE_ROOT/fakez.ctl"
+    service start
+}
+# the engine rejects its command line (--dry-run fails): the service has nothing to run and says «error» at once
+setup_bypass_error() {
+    printf 'dryrun_fail=1\n' >"$TGWS_SERVICE_ROOT/fakez.ctl"
     service start
 }
 setup_fake_probes() { export TGWS_FAKE_PROBES=1; service start; }
@@ -244,6 +267,7 @@ setup_lan() {
     printf '[proxy]\nport=%s\nhost=%s\n[app]\nfirstrun=done\n' "$((port_base + scene_no))" "$host" >"$TGWS_DATA_DIR/tgwsone.ini"
     service start
 }
+setup_wizard_no_engine() { setup_wizard; export TGWS_ENGINE=/nonexistent/tgws-engine; }
 setup_wizard() { WIZARD=1; export WIZARD; printf '[proxy]\nport=%s\n' "$((port_base + scene_no))" >"$TGWS_DATA_DIR/tgwsone.ini"; service start; }
 
 # ----- actions (coordinates are relative to the window; see the screenshots they produce) -----
@@ -262,18 +286,98 @@ act_home_telegram() {
 act_home_error() { connect; shot home-error; }
 act_home_menu() { connect; click_main 607 162 1; SHOT_KEEP_POINTER=1 shot home-menu; }
 
-act_bypass_running() { nav bypass; sleep 1.5; shot bypass; }
-act_bypass_error() { sleep 10; nav bypass; sleep 1.5; shot bypass-error; }
-act_bypass_exclusions() { nav bypass; sleep 1; click_main 727 418 1; shot bypass-exclusions; }
+act_bypass_running() { nav bypass; sleep 1.5; shot bypass; scroll_main 15; shot bypass-bottom; }
+act_bypass_restarting() { sleep 3; nav bypass; sleep 1.5; shot bypass-restarting; }
+act_bypass_error() { sleep 3; nav bypass; sleep 1.5; shot bypass-error; }
 
-act_diagnostics() { nav diagnostics; sleep 1; shot diagnostics-before; click_main 470 60 8; shot diagnostics; }
-act_logs() { nav logs; sleep 1.5; shot logs; }
-act_settings() { nav settings; sleep 1; shot settings; }
+# the pointer inside the newest dialog (clicks work without a window manager; keys do not reliably: nothing gives the dialog focus)
+pointer_into_dialog() { dialog_geometry && xdotool mousemove $((dx + ${1:-200})) $((dy + ${2:-150})) && sleep 0.4; }
+
+act_bypass_exclusions() { nav bypass; sleep 1; scroll_main 15; click_main 728 357 1; shot bypass-exclusions; scroll_main 15; shot bypass-exclusions-bottom; }
+
+act_finder() {
+    nav bypass
+    click_main 338 269 2
+    pointer_into_dialog
+    SHOT_KEEP_POINTER=1 shot finder-confirm
+    # «Начать подбор»: clicked, not entered (without a window manager nothing hands the dialog the keyboard focus reliably)
+    click_dialog 514 100 1.5
+    SHOT_KEEP_POINTER=1 shot finder-running-1
+    sleep 3
+    SHOT_KEEP_POINTER=1 shot finder-running-2
+    sleep 13
+    SHOT_KEEP_POINTER=1 shot finder-done
+}
+
+act_custom_editor() {
+    nav bypass
+    scroll_main 15
+    click_main 733 444 2
+    pointer_into_dialog
+    SHOT_KEEP_POINTER=1 shot custom-editor
+}
+
+act_settings_confirm() {
+    nav settings
+    sleep 1
+    click_main 381 440 1.5    # «Новый…» (a new secret): asks first
+    shot settings-confirm
+}
+
+act_settings_advanced() {
+    nav settings
+    sleep 1
+    click_main 315 515 1
+    scroll_main 15
+    shot settings-advanced
+}
+
+act_qr() {
+    click_main 443 164 1      # «···»
+    click_main 522 228 2      # «QR для телефона»
+    pointer_into_dialog
+    SHOT_KEEP_POINTER=1 shot qr
+}
 
 act_wizard() {
     sleep 3
     shot wizard-1
+    dialog_geometry || return 0
+    click_dialog 477 387 1.5   # «Далее»
+    shot wizard-2
+    click_dialog 477 387 1.5   # «Пропустить»
+    shot wizard-3
+    click_dialog 477 387 2     # «Готово»
+    shot wizard-finished
+    echo "  autostart entry written to the scene's own config dir: $(find "$XDG_CONFIG_HOME/autostart" -type f -printf '%f ' 2>/dev/null)"
+    echo "  first-run flag in the scene's ini: $(grep -c 'firstrun=done' "$TGWS_DATA_DIR/tgwsone.ini")"
 }
+
+act_wizard_telegram() {
+    sleep 3
+    dialog_geometry || return 0
+    click_dialog 477 387 1.5   # «Далее»
+    python3 -I -c "import socket,time; s=socket.create_connection(('127.0.0.1', $((port_base + scene_no)))); time.sleep(12)" &
+    holder_pid=$!
+    sleep 5
+    shot wizard-2-telegram
+}
+
+act_wizard_failure() { sleep 4; shot wizard-fail; }
+
+act_diagnostics() { nav diagnostics; sleep 1; shot diagnostics-before; click_main 730 46 9; shot diagnostics; }
+act_logs() {
+    connect                   # so that the proxy's own log has lines
+    nav logs
+    sleep 1.5
+    shot logs
+    click_main 396 91 1.5     # «Прокси»
+    shot logs-proxy
+    click_main 486 91 1.5     # «Обход DPI»
+    shot logs-service
+}
+act_settings() { nav settings; sleep 1; shot settings; }
+
 
 SCENES=(
     "home-stopped setup_service act_home_stopped"
@@ -282,12 +386,20 @@ SCENES=(
     "home-error setup_no_engine act_home_error"
     "home-menu setup_service act_home_menu"
     "bypass setup_service act_bypass_running"
-    "bypass-error setup_bypass_crash act_bypass_error"
+    "bypass-restarting setup_bypass_crash act_bypass_restarting"
+    "bypass-error setup_bypass_error act_bypass_error"
     "bypass-exclusions setup_service act_bypass_exclusions"
     "diagnostics setup_service act_diagnostics"
     "logs setup_service act_logs"
     "settings setup_service act_settings"
+    "finder setup_fake_probes act_finder"
+    "custom-editor setup_service act_custom_editor"
+    "settings-confirm setup_service act_settings_confirm"
+    "settings-advanced setup_service act_settings_advanced"
+    "qr setup_lan act_qr"
     "wizard setup_wizard act_wizard"
+    "wizard-telegram setup_wizard act_wizard_telegram"
+    "wizard-failure setup_wizard_no_engine act_wizard_failure"
 )
 
 want=("$@")
