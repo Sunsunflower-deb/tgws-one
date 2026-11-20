@@ -22,6 +22,8 @@ internal sealed partial class MainWindowViewModel : ObservableObject, INavigator
 
     public IReadOnlyList<PageViewModel> Pages { get; }
 
+    partial void OnSelectedPageChanged(PageViewModel value) => value.OnShown();
+
     /// <summary>Moves to <paramref name="page"/> (one of <see cref="Pages"/>).</summary>
     public void Navigate(PageViewModel page) => SelectedPage = page;
 

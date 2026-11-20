@@ -54,6 +54,12 @@ internal static class ServiceHost
 
                 ZapretBundle bundle = ZapretBundle.Locate(os, appDir, env);
                 NftManager? nft = os == OsKind.Linux ? new NftManager(new ProcessCommandRunner(), new ProcSysctl()) : null;
+                if (nft != null && env("TGWS_NO_NFT") == "1")
+                {
+                    // Test rigs only (the UI's visual checks run a user-level service with FakeZapret, which cannot load nftables rules).
+                    log.Write("предупреждение: TGWS_NO_NFT=1 — правила nftables не применяются, перехват трафика не работает");
+                    nft = null;
+                }
                 var runner = new ZapretRunner(bundle.Exe, Path.Combine(paths.LogsDir, "zapret.log"), log, nft);
                 string? debugFile = env("TGWS_ZAPRET_DEBUG") is { Length: > 0 } d ? d : null;
                 await using var service = new ZapretService(os, paths, bundle, Path.Combine(appDir, "lists"), runner, log, debugFile: debugFile);

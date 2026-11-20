@@ -9,6 +9,11 @@ internal abstract class PageViewModel(string title, string iconPath) : Observabl
 
     /// <summary>SVG path data on the 24×24 grid, see <c>IconPaths</c>.</summary>
     public string IconPath { get; } = iconPath;
+
+    /// <summary>The page was just brought to the front: a place to load what it shows. Called on the UI thread; must not block.</summary>
+    public virtual void OnShown()
+    {
+    }
 }
 
 /// <summary>Stands in for a page until its own task lands.</summary>

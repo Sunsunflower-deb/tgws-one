@@ -136,6 +136,49 @@ public class ServiceHostTests : IDisposable
     }
 
     [NonRootLinuxFact]
+    public void Service_WithTheNoNftSwitch_RunsTheBypassWithoutEverCallingNft()
+    {
+        // TGWS_NO_NFT=1 is how the UI's visual checks run a user-level service with FakeZapret: it cannot load nftables rules.
+        if (OperatingSystem.IsWindows()) return;
+        using var tmp = new TempDir();
+        string root = tmp.Combine("root");
+        string fakeBin = tmp.Combine("bin");
+        string nftLog = tmp.Combine("nft.log");
+        Directory.CreateDirectory(fakeBin);
+        File.WriteAllText(Path.Combine(fakeBin, "nft"), "#!/bin/sh\necho \"ARGS: $*\" >> \"$NFT_LOG\"\nexit 0\n");
+        File.SetUnixFileMode(Path.Combine(fakeBin, "nft"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        ServicePaths paths = ServicePaths.For(OsKind.Linux, n => n == "TGWS_SERVICE_ROOT" ? root : null);
+
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo("--service");
+        psi.Environment["TGWS_SERVICE_ROOT"] = root;
+        psi.Environment["TGWS_ZAPRET_EXE"] = FakeZapretEnv.ExePath;
+        psi.Environment["TGWS_ZAPRET_DIR"] = tmp.Combine("bundle");
+        psi.Environment["TGWS_NO_NFT"] = "1";
+        psi.Environment["NFT_LOG"] = nftLog;
+        psi.Environment["PATH"] = fakeBin + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
+        using Process service = Process.Start(psi)!;
+        _ = service.StandardOutput.ReadToEndAsync();
+        _ = service.StandardError.ReadToEndAsync();
+        try
+        {
+            Assert.True(WaitFor(() => File.Exists(paths.Endpoint) || service.HasExited), "the control socket never appeared");
+            Assert.False(service.HasExited);
+
+            (int code, string status, _) = Cli(root, "status");
+
+            Assert.Equal(0, code);
+            Assert.Contains("обход DPI: работает", status);
+            Assert.True(WaitFor(() => _env.Args.Length > 0), "the bypass child never started");
+            Assert.False(File.Exists(nftLog), "nft was called");
+            Assert.Contains("TGWS_NO_NFT=1", File.ReadAllText(Path.Combine(paths.LogsDir, "service.log")));
+        }
+        finally
+        {
+            if (!service.HasExited) service.Kill(entireProcessTree: true);
+        }
+    }
+
+    [NonRootLinuxFact]
     public void Service_ReplacesAStaleSocket_AndReportsAMissingBundleAsAnErrorState()
     {
         // A socket left by a crashed run must not keep the service from starting, and a missing bundle is a state to show.
