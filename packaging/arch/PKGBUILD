@@ -1,0 +1,34 @@
+# Maintainer: TgwsOne contributors
+#
+# Repackages the release tarball (make dist-linux builds it, CI uploads it): nothing is compiled here.
+# `make dist-linux` also leaves a copy of this file in dist/ with the tarball's real checksum in sha256sums; build from that one:
+#   cd dist && makepkg -f
+# Not installed anywhere by the build, and the service is never enabled by the package: see tgwsone-bin.install.
+pkgname=tgwsone-bin
+pkgver=2.0.0
+pkgrel=1
+pkgdesc='Local Telegram proxy with DPI bypass (zapret2): desktop app, bypass service and command line'
+arch=(x86_64)
+url='https://github.com/Sunsunflower-deb/tgws-one'
+license=(MIT)
+# glibc, gcc-libs: the .NET app and the engine; icu: the app uses IdnMapping and loads ICU at run time; zlib: the engine (PyInstaller);
+# fontconfig, freetype2: Skia, the UI's renderer; the lib* ones are what Avalonia's X11 backend opens; nftables: the bypass service.
+depends=(glibc gcc-libs icu zlib fontconfig freetype2 nftables
+         libx11 libxext libxfixes libxi libxrandr libxcursor libice libsm)
+optdepends=('polkit: сохранение своих стратегий из интерфейса')
+provides=(tgwsone)
+conflicts=(tgwsone)
+# The .NET single-file app and the PyInstaller engine carry their payload inside the file; stripping would corrupt them.
+options=(!strip !debug)
+install=tgwsone-bin.install
+# From a release, instead of the local file:
+#   source=("$url/releases/download/v$pkgver/tgwsone-$pkgver-linux-x64.tar.gz")
+source=("tgwsone-$pkgver-linux-x64.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "tgwsone-$pkgver"
+  # The same layout script as `make install` and the tarball's install.sh.
+  packaging/linux/install-tree.sh "$pkgdir" /usr .
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

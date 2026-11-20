@@ -104,11 +104,13 @@ uninstall:
 	packaging/linux/uninstall-tree.sh "$(DESTDIR)" "$(PREFIX)"
 
 # The release tarball: dist/tgwsone-<version>-linux-x64.tar.gz (+ .sha256), one folder inside that is exactly what
-# install-tree.sh takes as its source, with install.sh / uninstall.sh on top. Does not build: run `make zapret2 build engine` first.
+# install-tree.sh takes as its source, with install.sh / uninstall.sh on top. Next to it, dist/PKGBUILD (tgwsone-bin) with the
+# tarball's checksum in it, and its tgwsone-bin.install. Does not build: run `make zapret2 build engine` first.
 # Built on this machine it links against this machine's glibc; the CI builds the release one on an older system.
 dist-linux:
 	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
-	rm -rf $(DIST_DIR) $(DIST_TAR) $(DIST_TAR).sha256
+	@grep -qx "pkgver=$(VERSION)" packaging/arch/PKGBUILD || { echo "pkgver в packaging/arch/PKGBUILD не равен версии сборки $(VERSION)" >&2; exit 1; }
+	rm -rf $(DIST_DIR) $(DIST_TAR) $(DIST_TAR).sha256 dist/PKGBUILD dist/tgwsone-bin.install
 	mkdir -p $(DIST_DIR)/packaging/linux
 	install -m 0755 $(APP_BIN) $(DIST_DIR)/tgwsone
 	install -m 0755 $(ENGINE_BIN) $(DIST_DIR)/tgws-engine
@@ -123,6 +125,8 @@ dist-linux:
 	install -m 0644 README.md LICENSE $(DIST_DIR)/
 	cd dist && tar --sort=name --owner=0 --group=0 --numeric-owner $(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) -cf - $(DIST_NAME) | gzip -n -9 > $(notdir $(DIST_TAR))
 	cd dist && sha256sum $(notdir $(DIST_TAR)) > $(notdir $(DIST_TAR)).sha256
+	install -m 0644 packaging/arch/PKGBUILD packaging/arch/tgwsone-bin.install dist/
+	sed -i "s|^sha256sums=.*|sha256sums=('$$(cut -d' ' -f1 $(DIST_TAR).sha256)')|" dist/PKGBUILD
 	@echo "$(DIST_TAR): $$(du -h $(DIST_TAR) | cut -f1), $$(cut -d' ' -f1 $(DIST_TAR).sha256)"
 
 clean:
