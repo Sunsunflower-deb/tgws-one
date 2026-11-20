@@ -196,7 +196,7 @@ public class WizardViewModelTests
     [Fact]
     public void TheHint_IsTheOneFromTheSpec()
     {
-        Assert.Equal("Telegram спросит «Подключить прокси?» — нажмите «Подключить»", WizardViewModel.TelegramHint);
+        Assert.Equal("Telegram покажет окно «Proxy Server» / «Прокси-сервер» — нажмите «Connect Proxy» / «Подключить прокси»", WizardViewModel.TelegramHint);
     }
 
     [Fact]

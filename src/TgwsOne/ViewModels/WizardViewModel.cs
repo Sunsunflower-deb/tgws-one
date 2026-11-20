@@ -13,7 +13,7 @@ internal enum WizardStep { Connect, Telegram, Done }
 /// </summary>
 internal sealed partial class WizardViewModel : ObservableObject
 {
-    public const string TelegramHint = "Telegram спросит «Подключить прокси?» — нажмите «Подключить»";
+    public const string TelegramHint = "Telegram покажет окно «Proxy Server» / «Прокси-сервер» — нажмите «Connect Proxy» / «Подключить прокси»";
     public const int StepCount = 3;
 
     private readonly IDiagnosticsActions _actions;

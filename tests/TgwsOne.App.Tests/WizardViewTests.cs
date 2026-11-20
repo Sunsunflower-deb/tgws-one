@@ -92,7 +92,7 @@ public class WizardViewTests
 
         Assert.True(Find<StackPanel>(window, "TelegramPanel").IsVisible);
         Assert.False(Find<StackPanel>(window, "ConnectPanel").IsVisible);
-        Assert.Equal("Telegram спросит «Подключить прокси?» — нажмите «Подключить»", Find<TextBlock>(window, "TelegramHintText").Text);
+        Assert.Equal("Telegram покажет окно «Proxy Server» / «Прокси-сервер» — нажмите «Connect Proxy» / «Подключить прокси»", Find<TextBlock>(window, "TelegramHintText").Text);
         Assert.True(Find<Button>(window, "OpenTelegramButton").IsVisible);
         Assert.True(Find<Button>(window, "SkipButton").IsVisible);
         Assert.False(Find<Button>(window, "NextButton").IsVisible);
