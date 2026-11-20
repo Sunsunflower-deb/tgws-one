@@ -14,7 +14,13 @@ NATIVE_LIBS := libSkiaSharp.so libHarfBuzzSharp.so
 # view of out/ made of links, so the 84 MB executable is not copied twice.
 INSTALL_SRC := out/install-src
 
-.PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall install-desktop uninstall-desktop clean
+# The release version is the one the build stamps into the program (Directory.Build.props), so a tarball can't be named differently.
+VERSION   := $(shell sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' Directory.Build.props)
+DIST_NAME := tgwsone-$(VERSION)
+DIST_DIR  := dist/$(DIST_NAME)
+DIST_TAR  := dist/$(DIST_NAME)-linux-x64.tar.gz
+
+.PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall install-desktop uninstall-desktop dist-linux clean
 
 engine:
 	engine/build-engine.sh
@@ -96,6 +102,28 @@ uninstall-desktop:
 # A service that was enabled has to be stopped first: systemctl disable --now tgwsone-zapret
 uninstall:
 	packaging/linux/uninstall-tree.sh "$(DESTDIR)" "$(PREFIX)"
+
+# The release tarball: dist/tgwsone-<version>-linux-x64.tar.gz (+ .sha256), one folder inside that is exactly what
+# install-tree.sh takes as its source, with install.sh / uninstall.sh on top. Does not build: run `make zapret2 build engine` first.
+# Built on this machine it links against this machine's glibc; the CI builds the release one on an older system.
+dist-linux:
+	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
+	rm -rf $(DIST_DIR) $(DIST_TAR) $(DIST_TAR).sha256
+	mkdir -p $(DIST_DIR)/packaging/linux
+	install -m 0755 $(APP_BIN) $(DIST_DIR)/tgwsone
+	install -m 0755 $(ENGINE_BIN) $(DIST_DIR)/tgws-engine
+	for lib in $(NATIVE_LIBS); do install -m 0755 $(PUB)/$(RID_LINUX)/$$lib $(DIST_DIR)/$$lib; done
+	cp -r --no-preserve=ownership,mode $(ZAPRET_SRC) $(DIST_DIR)/zapret2
+	cp -r --no-preserve=ownership,mode $(LISTS_SRC) $(DIST_DIR)/lists
+	chmod -R u=rwX,go=rX $(DIST_DIR)/zapret2 $(DIST_DIR)/lists
+	chmod 0755 $(DIST_DIR)/zapret2/nfqws2
+	install -m 0755 packaging/linux/install.sh packaging/linux/uninstall.sh $(DIST_DIR)/
+	install -m 0755 packaging/linux/install-tree.sh packaging/linux/uninstall-tree.sh $(DIST_DIR)/packaging/linux/
+	install -m 0644 packaging/linux/tgwsone-zapret.service.in packaging/linux/tgwsone.desktop packaging/linux/tgwsone.png $(DIST_DIR)/packaging/linux/
+	install -m 0644 README.md LICENSE $(DIST_DIR)/
+	cd dist && tar --sort=name --owner=0 --group=0 --numeric-owner $(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) -cf - $(DIST_NAME) | gzip -n -9 > $(notdir $(DIST_TAR))
+	cd dist && sha256sum $(notdir $(DIST_TAR)) > $(notdir $(DIST_TAR)).sha256
+	@echo "$(DIST_TAR): $$(du -h $(DIST_TAR) | cut -f1), $$(cut -d' ' -f1 $(DIST_TAR).sha256)"
 
 clean:
 	rm -rf out && find src tests -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
