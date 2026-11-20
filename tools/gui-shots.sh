@@ -293,7 +293,7 @@ act_bypass_error() { sleep 3; nav bypass; sleep 1.5; shot bypass-error; }
 # the pointer inside the newest dialog (clicks work without a window manager; keys do not reliably: nothing gives the dialog focus)
 pointer_into_dialog() { dialog_geometry && xdotool mousemove $((dx + ${1:-200})) $((dy + ${2:-150})) && sleep 0.4; }
 
-act_bypass_exclusions() { nav bypass; sleep 1; scroll_main 15; click_main 728 357 1; shot bypass-exclusions; scroll_main 15; shot bypass-exclusions-bottom; }
+act_bypass_exclusions() { nav bypass; sleep 1; scroll_main 15; click_main 788 450 1; shot bypass-exclusions; scroll_main 15; shot bypass-exclusions-bottom; }
 
 act_finder() {
     nav bypass
@@ -312,7 +312,7 @@ act_finder() {
 act_custom_editor() {
     nav bypass
     scroll_main 15
-    click_main 733 444 2
+    click_main 793 537 2
     pointer_into_dialog
     SHOT_KEEP_POINTER=1 shot custom-editor
 }
@@ -365,7 +365,7 @@ act_wizard_telegram() {
 
 act_wizard_failure() { sleep 4; shot wizard-fail; }
 
-act_diagnostics() { nav diagnostics; sleep 1; shot diagnostics-before; click_main 730 46 9; shot diagnostics; }
+act_diagnostics() { nav diagnostics; sleep 1; shot diagnostics-before; click_main 790 46 9; shot diagnostics; }
 act_logs() {
     connect                   # so that the proxy's own log has lines
     nav logs

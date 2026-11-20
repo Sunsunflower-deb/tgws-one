@@ -50,8 +50,8 @@ public class MainWindowTests
     {
         var window = new MainWindow { DataContext = MainWindowViewModel.CreateShell() };
 
-        Assert.Equal(820, window.Width);
-        Assert.Equal(540, window.Height);
+        Assert.Equal(880, window.Width);
+        Assert.Equal(640, window.Height);
         Assert.Equal(720, window.MinWidth);
         Assert.Equal(480, window.MinHeight);
     }

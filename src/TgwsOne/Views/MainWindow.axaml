@@ -7,7 +7,7 @@
         Title="TgwsOne"
         Icon="/Assets/app.ico"
         Background="{DynamicResource PageBackground}"
-        Width="820" Height="540"
+        Width="880" Height="640"
         MinWidth="720" MinHeight="480"
         WindowStartupLocation="CenterScreen">
 
