@@ -49,7 +49,25 @@ internal static class Program
 
     // Not inlined: keeps the Avalonia types out of Main, so the CLI paths never touch the UI assemblies.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static int RunUi(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    private static int RunUi(string[] args)
+    {
+        // One window per user: a later launch tells the first to show itself and ends here, before any UI library is loaded.
+        // The autostart's --tray start says nothing: it must not pop the window up.
+        AppPaths paths = AppPaths.Current;
+        SingleInstance instance = SingleInstance.Acquire(Path.Combine(paths.RunDir, "app.sock"),
+                                                         args is ["--tray"] ? null : SingleInstance.ShowMessage, new AppLog(paths.AppLogFile).Write);
+        if (instance.Role == InstanceRole.Second) return 0;
+
+        App.Instance = instance;
+        try
+        {
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            instance.Dispose();
+        }
+    }
 
     /// <summary>Also what the previewer and the headless tests configure the app from.</summary>
     public static AppBuilder BuildAvaloniaApp()

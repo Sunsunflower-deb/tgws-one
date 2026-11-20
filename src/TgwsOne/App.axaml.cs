@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Avalonia.Styling;
 using TgwsOne.Core.Zapret;
 using TgwsOne.Services;
@@ -14,6 +15,9 @@ internal sealed partial class App : Application
 {
     /// <summary>Dev only: <c>TGWS_THEME=light|dark</c> forces the theme (for screenshots). Not a setting; the app follows the OS.</summary>
     private const string ThemeVariable = "TGWS_THEME";
+
+    /// <summary>Set by <c>Program</c> before the app starts: the window is shown when a later launch asks for it. Null under the tests and the previewer.</summary>
+    internal static SingleInstance? Instance { get; set; }
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -35,12 +39,23 @@ internal sealed partial class App : Application
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => services.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
+            // A later launch asked for the window: bring it up wherever it is (hidden, minimized, behind others).
+            if (Instance is { } instance)
+                instance.ShowRequested += () => Dispatcher.UIThread.Post(() => ShowWindow(window));
+
             // First run: the wizard, over the window (not for the autostart's --tray start, which is meant to be quiet).
             if (!services.Settings.FirstRunDone && desktop.Args is not ["--tray"])
                 window.Opened += async (_, _) => await ShowWizardAsync(window, services, actions, autostart);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    internal static void ShowWindow(Window window)
+    {
+        if (!window.IsVisible) window.Show();
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        window.Activate();
     }
 
     private static async Task ShowWizardAsync(MainWindow owner, AppServices s, IDiagnosticsActions actions, IAutostart autostart)
