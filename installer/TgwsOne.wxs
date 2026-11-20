@@ -49,6 +49,17 @@
     <Launch Condition="Installed OR VersionNT64" Message="TgwsOne requires 64-bit Windows." />
     <Launch Condition="Installed OR TGWS_BUILD &gt;= 17763" Message="TgwsOne requires Windows 10 version 1809 (build 17763) or newer." />
 
+    <!--
+      Что держит файлы, пока их заменяют или удаляют. Restart Manager достаёт только приложения в сеансе службы установщика, а окно
+      TgwsOne и движок прокси работают в сеансе пользователя (и 1.x тоже: TgwsOne.exe с тем же именем файла и TgWsProxy_windows.exe):
+      обновление с работающим приложением кончалось кодом 3010 и половинчатым состоянием, удаление оставляло процесс (проверка в
+      Windows-ВМ, SP5). Только наши файлы по именам. winws.exe и winws2.exe сюда не входят: у пользователя может быть свой zapret в другой
+      папке; 1.x-шный winws из старой папки закрывает сама служба (LegacyMigration), а winws2 — служба же.
+    -->
+    <util:CloseApplication Id="CloseTgwsOne" Target="TgwsOne.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+    <util:CloseApplication Id="CloseTgwsEngine" Target="tgws-engine.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+    <util:CloseApplication Id="CloseOldProxy" Target="TgWsProxy_windows.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="TgwsOne" />
     </StandardDirectory>
