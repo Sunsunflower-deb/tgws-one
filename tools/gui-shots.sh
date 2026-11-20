@@ -4,6 +4,10 @@
 #
 #   tools/gui-shots.sh [output dir]        (default: /Development/personal/dump/tgws/screens/sp3)
 #   tools/gui-shots.sh [output dir] <scene>...   only the named scenes (see the list in the SCENES array below)
+#   GUI_SHOTS_THEMES=light tools/gui-shots.sh <dir> live   one theme only (default: light and dark)
+# The `live` scene is the odd one out: no fake service, no fake probes. It connects the real engine, runs the MTProto probe
+# (GUI_SHOTS_PROBE, default /Development/personal/dump/tgws/probe) against it and then the real diagnostics, which dial
+# Telegram's hosts and Cloudflare over this machine's normal route.
 #
 # Nothing here touches the user's desktop or profile:
 #   - the X server is Xvnc on :99 listening on localhost only (a viewer may attach with `vncviewer localhost:99`); there is no
@@ -214,7 +218,7 @@ shot() {
 run_scene() {
     local name=$1 setup=$2 actions=$3
     scene_no=$((scene_no + 1))
-    for theme in light dark; do
+    for theme in ${GUI_SHOTS_THEMES:-light dark}; do
         root=$work/$name-$theme
         mkdir -p "$root/data" "$root/service" "$root/xdg" "$root/xdg-run"
         chmod 700 "$root/xdg-run"
@@ -262,6 +266,8 @@ setup_bypass_error() {
     service start
 }
 setup_fake_probes() { export TGWS_FAKE_PROBES=1; service start; }
+# the live scene starts no bypass service at all: only the proxy engine runs
+setup_live() { :; }
 setup_lan() {
     local host=0.0.0.0
     printf '[proxy]\nport=%s\nhost=%s\n[app]\nfirstrun=done\n' "$((port_base + scene_no))" "$host" >"$TGWS_DATA_DIR/tgwsone.ini"
@@ -366,6 +372,47 @@ act_wizard_telegram() {
 act_wizard_failure() { sleep 4; shot wizard-fail; }
 
 act_diagnostics() { nav diagnostics; sleep 1; shot diagnostics-before; click_main 790 46 9; shot diagnostics; }
+# waits until a TCP port on the loopback accepts a connection (15 s at most)
+wait_listening() {
+    python3 -I -c "
+import socket, sys, time
+end = time.time() + 15
+while time.time() < end:
+    try:
+        socket.create_connection(('127.0.0.1', $1), 1).close()
+        sys.exit(0)
+    except OSError:
+        time.sleep(0.3)
+sys.exit(1)"
+}
+
+# the MTProto probe against the scene's proxy: port and secret come from the scene's own ini; the verdict is the probe's exit code
+live_probe() {
+    local port=$1 probe_dir=${GUI_SHOTS_PROBE:-/Development/personal/dump/tgws/probe} secret rc
+    if [ ! -x "$probe_dir/.venv/bin/python" ]; then
+        echo "  no MTProto probe at $probe_dir: skipped"
+        return 0
+    fi
+    secret=$(sed -n 's/^secret=//p' "$TGWS_DATA_DIR/tgwsone.ini")
+    "$probe_dir/.venv/bin/python" "$probe_dir/mtproto_probe.py" --host 127.0.0.1 --port "$port" --secret "$secret" \
+        >"$out/live-probe-$theme.txt" 2>&1
+    rc=$?
+    sed 's/^/  | /' "$out/live-probe-$theme.txt"
+    echo "  MTProto probe exit code: $rc"
+}
+
+act_live() {
+    local port=$((port_base + scene_no))
+    connect
+    wait_listening "$port" && echo "  proxy listens on $port" || echo "  the proxy does NOT listen on $port"
+    shot live-home-connected
+    live_probe "$port"
+    nav diagnostics
+    sleep 1
+    click_main 790 46 25      # «Проверить»: real TCP/TLS to kws1–5 and the Cloudflare download, which may take a while
+    shot live-diagnostics
+}
+
 act_logs() {
     connect                   # so that the proxy's own log has lines
     nav logs
@@ -390,6 +437,7 @@ SCENES=(
     "bypass-error setup_bypass_error act_bypass_error"
     "bypass-exclusions setup_service act_bypass_exclusions"
     "diagnostics setup_service act_diagnostics"
+    "live setup_live act_live"
     "logs setup_service act_logs"
     "settings setup_service act_settings"
     "finder setup_fake_probes act_finder"
