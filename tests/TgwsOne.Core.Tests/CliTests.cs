@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 
 namespace TgwsOne.Core.Tests;
@@ -213,11 +213,14 @@ public class CliTests : IDisposable
     }
 
     [Fact]
-    public void Cli_Version_Prints_2_0_0()
+    public void Cli_Version_PrintsTheAssemblyVersion()
     {
         var r = RunCli("--version");
 
         Assert.Equal(0, r.Code);
-        Assert.Contains("2.0.0", r.Out);
+        // The product version comes from Directory.Build.props: assert against it instead of a literal, so bumping the
+        // version does not break this test.
+        string expected = typeof(TgwsOne.Core.ProxyController).Assembly.GetName().Version!.ToString(3);
+        Assert.Contains(expected, r.Out);
     }
 }
