@@ -47,7 +47,8 @@ internal sealed partial class App : Application
             bypass,
             diagnostics,
             new LogsViewModel(LogsViewModel.DefaultTabs(s.Paths, ServicePaths.Current), new DispatcherTicker(), s.Clipboard, s.Launcher),
-            MainWindowViewModel.Placeholder(AppPage.Settings),
+            new SettingsViewModel(s.Settings, s.Proxy, s.Dialogs, s.Clipboard, new SystemNetInfo(),
+                                  Autostart.ForThisMachine(Environment.ProcessPath ?? ""), home.RestartProxyAsync),
         ];
     });
 }

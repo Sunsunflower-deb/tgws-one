@@ -22,4 +22,35 @@ internal sealed class IniAppSettings(AppPaths paths, AppLog? log = null) : IAppS
         ini.Save();
         log?.Write("secret заменён по просьбе пользователя");
     }
+
+    public ProxyForm ReadForm() => ProxySettingsStore.ReadForm(IniFile.Load(paths.Ini));
+
+    public string Secret() => ProxySettingsStore.EnsureSecret(IniFile.Load(paths.Ini), log);
+
+    public bool LanSharing => LanShare.IsEnabled(IniFile.Load(paths.Ini));
+
+    public string? LanAddress => IniFile.Load(paths.Ini).Get("app", LanShare.AddressKey) is { Length: > 0 } a ? a : null;
+
+    public string PreviousHost => LanShare.PreviousHost(IniFile.Load(paths.Ini));
+
+    public void Save(ProxySettings settings, bool lanSharing, string? lanAddress, string? previousHost = null)
+    {
+        IniFile ini = IniFile.Load(paths.Ini);
+        // The switch first: turning sharing on has to see the host the proxy listens on now (or the one the form had), before
+        // the form's values overwrite it.
+        if (lanSharing)
+        {
+            if (previousHost is { Length: > 0 } host && host != LanShare.WildcardHost) ini.Set("proxy", "host", host);
+            LanShare.Enable(ini);
+        }
+        else
+        {
+            LanShare.Disable(ini);
+        }
+
+        ProxySettings toWrite = lanSharing ? settings with { Host = System.Net.IPAddress.Any } : settings;
+        ini.Set("app", LanShare.AddressKey, lanSharing ? lanAddress ?? "" : "");
+        ProxySettingsStore.Save(ini, toWrite);   // also saves the file
+        log?.Write(lanSharing ? $"настройки сохранены (раздача в сеть включена, адрес {lanAddress})" : "настройки сохранены");
+    }
 }

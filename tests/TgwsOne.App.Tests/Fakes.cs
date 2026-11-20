@@ -88,10 +88,11 @@ internal sealed class FakeControlClient : IControlClient
     }
 }
 
-/// <summary>A TCP table the test fills in.</summary>
+/// <summary>A TCP table and a list of interfaces that the test fills in.</summary>
 internal sealed class FakeNetInfo : INetInfo
 {
     private readonly List<TcpConnection> _connections = [];
+    private readonly List<NetInterfaceInfo> _interfaces = [];
 
     public void Set(params TcpConnection[] connections)
     {
@@ -102,9 +103,23 @@ internal sealed class FakeNetInfo : INetInfo
         }
     }
 
+    public void SetInterfaces(params NetInterfaceInfo[] interfaces)
+    {
+        lock (_interfaces)
+        {
+            _interfaces.Clear();
+            _interfaces.AddRange(interfaces);
+        }
+    }
+
     public IReadOnlyList<TcpConnection> TcpConnections()
     {
         lock (_connections) return [.. _connections];
+    }
+
+    public IReadOnlyList<NetInterfaceInfo> Interfaces()
+    {
+        lock (_interfaces) return [.. _interfaces];
     }
 }
 
@@ -117,15 +132,42 @@ internal sealed class FixedClock(DateTimeOffset start) : IClock
 
 internal sealed class FakeAppSettings : IAppSettings
 {
-    public const string Secret = "0123456789abcdef0123456789abcdef";
+    public const string InitialSecret = "0123456789abcdef0123456789abcdef";
 
-    public ProxySettings Settings { get; set; } = new(IPAddress.Loopback, 1443, [], CfProxy: true, H2: true, NoSecure: false, Verbose: true, [], [], 256, 4, 5, Secret);
-    public string Link { get; set; } = $"tg://proxy?server=127.0.0.1&port=1443&secret=dd{Secret}";
+    public ProxySettings Settings { get; set; } = new(IPAddress.Loopback, 1443, [], CfProxy: true, H2: true, NoSecure: false, Verbose: true, [], [], 256, 4, 5, InitialSecret);
+    public string Link { get; set; } = $"tg://proxy?server=127.0.0.1&port=1443&secret=dd{InitialSecret}";
     public int SecretsReplaced { get; private set; }
+
+    /// <summary>What the settings form starts from.</summary>
+    public ProxyForm Form { get; set; } = new("127.0.0.1", "1443", "2:149.154.167.220\n4:149.154.167.220", CfProxy: true, H2: true, NoSecure: false, Verbose: true, "", "", "256", "4", "5");
+
+    public string CurrentSecret { get; set; } = InitialSecret;
+    public bool LanSharing { get; set; }
+    public string? LanAddress { get; set; }
+    public string PreviousHost { get; set; } = "127.0.0.1";
+
+    /// <summary>What was last saved, and how often.</summary>
+    public (ProxySettings Settings, bool LanSharing, string? LanAddress)? Saved { get; private set; }
+    public string? SavedPreviousHost { get; private set; }
+    public int Saves { get; private set; }
 
     public ProxySettings Load() => Settings;
     public string TelegramLink() => Link;
-    public void ReplaceSecret() => SecretsReplaced++;
+    public void ReplaceSecret()
+    {
+        SecretsReplaced++;
+        CurrentSecret = new string((char)('a' + SecretsReplaced), 32);
+    }
+
+    public ProxyForm ReadForm() => Form;
+    public string Secret() => CurrentSecret;
+
+    public void Save(ProxySettings settings, bool lanSharing, string? lanAddress, string? previousHost = null)
+    {
+        Saves++;
+        Saved = (settings, lanSharing, lanAddress);
+        SavedPreviousHost = previousHost;
+    }
 }
 
 internal sealed class FakeLauncher : ILauncher

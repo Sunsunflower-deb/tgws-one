@@ -26,6 +26,32 @@
       <Setter Property="Foreground" Value="{DynamicResource SecondaryText}" />
     </Style>
 
+    <!-- What is wrong with a field, right under it. -->
+    <Style Selector="TextBlock.error">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource ToneRed}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- The theme rounds a check box by the same radius as a button: at 8 on a 16 px box that is a circle, and reads as a radio button. -->
+    <Style Selector="CheckBox">
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <!-- An expander inside a card: its header is the card's own first line, not a button of its own. -->
+    <Style Selector="Expander /template/ ToggleButton#ExpanderHeader">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <!-- Its content panel takes both from the Expander itself (a template binding), where the theme's own styles can't outrank this. -->
+    <Style Selector="Expander">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Expander:down /template/ Border#ExpanderContent">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
     <!-- A button that is only a click target around its content (a card that opens a page). -->
     <Style Selector="Button.plain">
       <Setter Property="Padding" Value="0" />

@@ -195,6 +195,9 @@ internal sealed partial class HomeViewModel : PageViewModel
         }
     }
 
+    /// <summary>Stops the proxy and starts it again, for a change (settings, a new secret) that only a restart puts into effect.</summary>
+    public Task RestartProxyAsync() => Busy(RestartCoreAsync);
+
     [RelayCommand]
     private void DismissBanner() => Banner = null;
 
