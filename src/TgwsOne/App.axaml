@@ -52,6 +52,13 @@
       <Setter Property="BorderThickness" Value="0" />
     </Style>
 
+    <!-- The bar under the selected tab spans the whole header (the theme draws it only as wide as the text, which reads as an underlined link). The header's own padding is 14 px on each side. -->
+    <Style Selector="TabControl.tabs TabItem /template/ Border#PART_SelectedPipe">
+      <Setter Property="Margin" Value="-14,0" />
+      <Setter Property="Height" Value="3" />
+      <Setter Property="CornerRadius" Value="1.5,1.5,0,0" />
+    </Style>
+
     <!-- A button that is only a click target around its content (a card that opens a page). -->
     <Style Selector="Button.plain">
       <Setter Property="Padding" Value="0" />

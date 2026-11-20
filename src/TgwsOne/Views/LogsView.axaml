@@ -6,12 +6,13 @@
              x:DataType="vm:LogsViewModel">
 
   <UserControl.Styles>
-    <!-- The theme's tab headers are 24 px light type: far too big next to the rest of the page. -->
+    <!-- The theme's tab headers are 24 px light type: far too big next to the rest of the page. (The bar under the selected one is
+         styled in App.axaml: a rule that reaches into a control template has to live there to apply.) -->
     <Style Selector="TabControl#TabsControl TabItem">
       <Setter Property="FontSize" Value="14" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="14,8" />
-      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="MinHeight" Value="38" />
     </Style>
   </UserControl.Styles>
 
@@ -28,7 +29,7 @@
       </StackPanel>
     </Grid>
 
-    <TabControl x:Name="TabsControl" Grid.Row="1" Padding="0" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}">
+    <TabControl x:Name="TabsControl" Classes="tabs" Grid.Row="1" Padding="0" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}">
       <TabControl.ItemTemplate>
         <DataTemplate x:DataType="vm:LogTabViewModel">
           <TextBlock Text="{Binding Title}" />

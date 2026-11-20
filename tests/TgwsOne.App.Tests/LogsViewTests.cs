@@ -2,6 +2,7 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TgwsOne.Core;
@@ -206,4 +207,22 @@ public class LogsViewTests
         Assert.Contains("Mono", block.FontFamily.Name + block.FontFamily.FamilyNames.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.Equal("abc", block.Text);
     }
+
+    [AvaloniaFact]
+    public void TheSelectedTab_HasABarAcrossItsWholeHeader_NotAnUnderlineBeneathItsText()
+    {
+        using var rig = new Rig();
+        rig.Open();
+        TabItem selected = rig.View.GetVisualDescendants().OfType<TabItem>().Single(t => t.IsSelected);
+        Border bar = selected.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_SelectedPipe");
+        TextBlock text = selected.GetVisualDescendants().OfType<TextBlock>().First();
+
+        Assert.Equal(3, bar.Bounds.Height);
+        Assert.Equal(0, bar.TranslatePoint(default, selected)!.Value.X, 1);        // it starts at the header's left edge …
+        Assert.Equal(selected.Bounds.Width, bar.Bounds.Width, 1);                  // … and runs to the right one: wider than the text
+        Assert.True(bar.Bounds.Width > text.Bounds.Width + 20);
+        // the label itself stays in the ordinary text colour; only the bar carries the accent
+        Assert.NotEqual(((ISolidColorBrush)bar.Background!).Color, ((ISolidColorBrush)text.Foreground!).Color);
+    }
 }
+
