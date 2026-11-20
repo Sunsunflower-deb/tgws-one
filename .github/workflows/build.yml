@@ -1,11 +1,14 @@
 name: build
 
-# A v* tag builds both platforms and publishes a release. A manual run (workflow_dispatch) only builds and keeps the artifacts.
+# A v* tag builds both platforms and publishes a release. A manual run (workflow_dispatch) and a pull request into main only
+# build and keep the artifacts; a pull request never sees the signing secrets, so its MSI is unsigned.
 # The version is the one in Directory.Build.props (it is what the program prints, what names the tarball and the PKGBUILD);
 # a tag that does not say the same version fails the build before anything is published.
 on:
   push:
     tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -133,8 +136,8 @@ jobs:
       - name: MSI
         shell: pwsh
         env:
-          SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
-          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+          SIGN_PFX_BASE64: ${{ github.event_name != 'pull_request' && secrets.SIGN_PFX_BASE64 || '' }}
+          SIGN_PFX_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.SIGN_PFX_PASSWORD || '' }}
         run: |
           $signArgs = @()
           if ($env:SIGN_PFX_BASE64) {
