@@ -165,5 +165,19 @@ public class ControlProtocolTests
     }
 
     [Fact]
-    public void MaxLineBytes_Is64K() => Assert.Equal(65536, ControlProtocol.MaxLineBytes);
+    public void MaxLineBytes_Is512K() => Assert.Equal(524288, ControlProtocol.MaxLineBytes);
+
+    [Fact]
+    public void TheLargestValidSetExclusions_FitsTheLineLimit_AndSurvivesAParseRoundTrip()
+    {
+        ControlRequest big = MaximalExclusions.Request();
+
+        string line = ControlProtocol.Serialize(big);
+
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(line), 65537, ControlProtocol.MaxLineBytes);   // too big for the old 64 KB limit
+        ControlRequest? parsed = ControlProtocol.ParseRequest(line, out string? error);
+        Assert.Null(error);
+        Assert.Equal(Exclusions.MaxEntries, parsed!.Hosts!.Count);
+        Assert.Equal(Exclusions.MaxEntries, parsed.Ips!.Count);
+    }
 }

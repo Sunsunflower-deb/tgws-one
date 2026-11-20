@@ -113,6 +113,44 @@ public class PermissionsTests : IDisposable
         Assert.Equal((UnixFileMode)0x1A4, Mode(file));   // 0644
     }
 
+    private const UnixFileMode FileRead = UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
+    [LinuxFact]
+    public void PublicAppLog_OpensItsFolder_AndLeavesTheFileReadableForEveryone()
+    {
+        // The service's logs: the app's Журналы page reads them as an ordinary user.
+        using var tmp = new TempDir();
+
+        string fresh = tmp.Combine("fresh");
+        new AppLog(Path.Combine(fresh, "service.log"), publicRead: true).Write("x");
+        AssertReachable(fresh);
+        Assert.Equal(FileRead, Mode(Path.Combine(fresh, "service.log")) & FileRead);
+
+        string closed = tmp.Combine("closed");
+        MakeDir(closed, Mode0700);   // what the first SP2 build left behind
+        string file = Path.Combine(closed, "service.log");
+        File.WriteAllText(file, "old\n");
+        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // as a strict umask leaves it
+        new AppLog(file, publicRead: true).Write("x");
+        AssertReachable(closed);
+        Assert.Equal((UnixFileMode)0x1A4, Mode(file));   // 0644
+    }
+
+    [LinuxFact]
+    public async Task TheRunnersLog_IsReadableForEveryone_EvenInAFolderAnOlderRunClosed()
+    {
+        using var tmp = new TempDir();
+        string logs = tmp.Combine("logs");
+        MakeDir(logs, Mode0700);
+        string zapretLog = Path.Combine(logs, "zapret.log");
+        await using var runner = new ZapretRunner(FakeZapretEnv.ExePath, zapretLog, new AppLog(tmp.Combine("elsewhere", "service.log")), nft: null, FakeZapretEnv.FastPolicy);
+
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+
+        AssertReachable(logs);
+        Assert.Equal(FileRead, Mode(zapretLog) & FileRead);
+    }
+
     [LinuxFact]
     public void ServicePaths_SeedAndEnsure_ProduceFilesNfqws2CanRead()
     {

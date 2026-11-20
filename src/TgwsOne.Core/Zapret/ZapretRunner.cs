@@ -60,7 +60,7 @@ public sealed class ZapretRunner : IAsyncDisposable
     {
         _exe = exe;
         _log = log;
-        _childLog = new AppLog(logFile);
+        _childLog = new AppLog(logFile, publicRead: true);
         _nft = nft;
         _policy = policy ?? BackoffPolicy.Default;
     }

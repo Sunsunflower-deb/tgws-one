@@ -48,8 +48,11 @@ public interface IControlHandler
 /// <summary>The wire format: one JSON object per line, UTF-8.</summary>
 public static class ControlProtocol
 {
-    /// <summary>Longest request line (without the newline) the server reads.</summary>
-    public const int MaxLineBytes = 64 * 1024;
+    /// <summary>
+    /// Longest request line (without the newline) the server reads. A <c>set-exclusions</c> with the most the lists take
+    /// (<see cref="Exclusions.MaxEntries"/> hosts of 253 characters and as many IPv6 networks) is about 300 KB.
+    /// </summary>
+    public const int MaxLineBytes = 512 * 1024;
 
     public const string InvalidRequest = "неверный запрос";
     public const string UnknownCommand = "неизвестная команда";

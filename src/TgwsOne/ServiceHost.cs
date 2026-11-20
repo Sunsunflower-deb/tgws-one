@@ -41,7 +41,7 @@ internal static class ServiceHost
             Func<string, string?> env = Environment.GetEnvironmentVariable;
             ServicePaths paths = ServicePaths.For(os, env);
             string appDir = AppContext.BaseDirectory;
-            var log = new AppLog(Path.Combine(paths.LogsDir, "service.log"));
+            var log = new AppLog(Path.Combine(paths.LogsDir, "service.log"), publicRead: true);   // the app's Журналы page reads it
 
             try
             {

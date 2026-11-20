@@ -59,6 +59,9 @@ public class ServiceHostTests : IDisposable
         File.WriteAllText(Path.Combine(fakeBin, "nft"), "#!/bin/sh\necho \"ARGS: $*\" >> \"$NFT_LOG\"\nif [ \"$1\" = \"-f\" ] && [ \"$2\" = \"-\" ]; then cat >> \"$NFT_LOG\"; fi\nexit 0\n");
         File.SetUnixFileMode(Path.Combine(fakeBin, "nft"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         ServicePaths paths = ServicePaths.For(OsKind.Linux, n => n == "TGWS_SERVICE_ROOT" ? root : null);
+        // The first SP2 build left the logs folder 0700; the service has to open it for the app's Журналы page.
+        Directory.CreateDirectory(paths.LogsDir);
+        File.SetUnixFileMode(paths.LogsDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
         var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
@@ -131,6 +134,15 @@ public class ServiceHostTests : IDisposable
             Assert.Equal("ARGS: delete table inet tgwsone", nftCalls[^1]);
             Assert.True(File.Exists(Path.Combine(paths.LogsDir, "service.log")));
             Assert.True(File.Exists(Path.Combine(paths.LogsDir, "zapret.log")));
+
+            // Any user can read both logs (the Журналы page): the folder is opened, the files are readable by group and others.
+            const UnixFileMode everyone = UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+            Assert.Equal(everyone, File.GetUnixFileMode(paths.LogsDir) & everyone);
+            foreach (string name in new[] { "service.log", "zapret.log" })
+            {
+                const UnixFileMode read = UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+                Assert.Equal(read, File.GetUnixFileMode(Path.Combine(paths.LogsDir, name)) & read);
+            }
         }
         finally
         {

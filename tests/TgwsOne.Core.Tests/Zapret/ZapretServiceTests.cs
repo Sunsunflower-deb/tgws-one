@@ -288,6 +288,20 @@ public class ZapretServiceTests : IDisposable
     }
 
     [LinuxFact]
+    public async Task SetExclusions_TheLargestValidList_IsAcceptedWhole()
+    {
+        await using ServiceRig rig = await ServiceRig.StartAsync(_env, beforeStart: p => new ServiceState(false, "auto").Save(p.StateIni));
+
+        ControlResponse r = await rig.Send(MaximalExclusions.Request());
+
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(Exclusions.MaxEntries, r.Hosts!.Count);
+        Assert.Equal(Exclusions.MaxEntries, r.Ips!.Count);
+        Assert.Equal(Exclusions.MaxEntries, Exclusions.Read(rig.Paths.Lists.ExcludeHosts).Count);
+        Assert.Equal(Exclusions.MaxEntries, Exclusions.Read(rig.Paths.Lists.ExcludeIps).Count);
+    }
+
+    [LinuxFact]
     public async Task Exclusions_ReturnsTheCurrentLists()
     {
         await using ServiceRig rig = await ServiceRig.StartAsync(_env);

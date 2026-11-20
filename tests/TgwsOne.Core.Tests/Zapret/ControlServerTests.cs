@@ -153,7 +153,7 @@ public class ControlServerTests
     public async Task OversizeLine_IsRefused_EvenWhenTheClientKeepsSendingPastTheSocketBuffer()
     {
         await using var f = await Fixture.StartAsync();
-        byte[] huge = Line("{\"cmd\":\"use\",\"strategy\":\"" + new string('a', 400_000) + "\"}");
+        byte[] huge = Line("{\"cmd\":\"use\",\"strategy\":\"" + new string('a', 1_200_000) + "\"}");   // well past MaxLineBytes and any socket buffer
 
         string? line = await f.RawAsync(huge);
 
@@ -164,7 +164,7 @@ public class ControlServerTests
     }
 
     [LinuxFact]
-    public async Task LineLimit_Is64K_ExcludingTheNewline()
+    public async Task LineLimit_IsMaxLineBytes_ExcludingTheNewline()
     {
         await using var f = await Fixture.StartAsync();
         const string head = "{\"cmd\":\"use\",\"strategy\":\"";
@@ -180,6 +180,21 @@ public class ControlServerTests
         ControlResponse tooBig = ControlProtocol.ParseResponse((await f.RawAsync(Encoding.UTF8.GetBytes(over + "\n")))!);
         Assert.Equal("слишком длинный запрос", tooBig.Error);
         Assert.Single(f.Handler.Calls);
+    }
+
+    [LinuxFact]
+    public async Task TheLargestValidSetExclusions_TravelsThroughTheClientAndTheServer()
+    {
+        // A real client and a real server: about 300 KB, which the old 64 KB limit refused.
+        await using var f = await Fixture.StartAsync();
+
+        ControlResponse r = await f.Client().SendAsync(MaximalExclusions.Request());
+
+        Assert.True(r.Ok, r.Error);
+        ControlRequest got = Assert.Single(f.Handler.Calls);
+        Assert.Equal(ControlCommands.SetExclusions, got.Cmd);
+        Assert.Equal(Exclusions.MaxEntries, got.Hosts!.Count);
+        Assert.Equal(Exclusions.MaxEntries, got.Ips!.Count);
     }
 
     [LinuxFact]
