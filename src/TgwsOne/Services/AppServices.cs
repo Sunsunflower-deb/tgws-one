@@ -8,9 +8,10 @@ namespace TgwsOne.Services;
 /// <summary>The real objects the window is built from: the only place that knows which implementation stands behind each interface.</summary>
 internal sealed class AppServices : IAsyncDisposable
 {
-    private AppServices(AppPaths paths, AppLog log, IProxyControl proxy, IControlClient control, StatusMonitor monitor,
+    private AppServices(AppPaths paths, AppLog log, IProxyControl proxy, IControlClient control, StatusMonitor monitor, Notifier notifier,
                         IAppSettings settings, ILauncher launcher, IClipboardService clipboard, IDialogService dialogs)
     {
+        Notifier = notifier;
         Paths = paths;
         Log = log;
         Proxy = proxy;
@@ -27,6 +28,9 @@ internal sealed class AppServices : IAsyncDisposable
     public IProxyControl Proxy { get; }
     public IControlClient Control { get; }
     public StatusMonitor Monitor { get; }
+
+    /// <summary>Tells the user about transitions while the window is not looking; the pages' start and stop go through <see cref="Proxy"/>, which marks them as the user's own.</summary>
+    public Notifier Notifier { get; }
     public IAppSettings Settings { get; }
     public ILauncher Launcher { get; }
     public IClipboardService Clipboard { get; }
@@ -38,10 +42,12 @@ internal sealed class AppServices : IAsyncDisposable
     {
         AppPaths paths = AppPaths.Current;
         var log = new AppLog(paths.AppLogFile);
-        IProxyControl proxy = new ProxyControl(new ProxyController(paths, log));
+        var notifier = new Notifier(NotificationSinks.ForThisMachine(paths), new SystemClock());
+        IProxyControl proxy = new UserActionProxyControl(new ProxyControl(new ProxyController(paths, log)), notifier);
         IControlClient control = new ControlClient(ServicePaths.Current);
         var monitor = new StatusMonitor(proxy, control, new SystemNetInfo());
-        return new AppServices(paths, log, proxy, control, monitor, new IniAppSettings(paths, log), new ShellLauncher(),
+        notifier.Attach(monitor);
+        return new AppServices(paths, log, proxy, control, monitor, notifier, new IniAppSettings(paths, log), new ShellLauncher(),
                                new AvaloniaClipboardService(owner), new AvaloniaDialogService(owner));
     }
 
