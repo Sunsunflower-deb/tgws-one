@@ -9,13 +9,16 @@ LIBDIR     := $(DESTDIR)$(PREFIX)/lib/tgwsone
 BINDIR     := $(DESTDIR)$(PREFIX)/bin
 UNITDIR    := $(DESTDIR)$(PREFIX)/lib/systemd/system
 UNIT       := tgwsone-zapret.service
+DATADIR    := $(DESTDIR)$(PREFIX)/share
+APPSDIR    := $(DATADIR)/applications
+ICONDIR    := $(DATADIR)/icons/hicolor/256x256/apps
 ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
 LISTS_SRC  := $(PUB)/$(RID_LINUX)/lists
 # The UI's native libraries: publish leaves them next to the single-file executable instead of inside it (a bundled copy
 # would have to be unpacked into a home directory first, which the root-run --service can't count on).
 NATIVE_LIBS := libSkiaSharp.so libHarfBuzzSharp.so
 
-.PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall clean
+.PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall install-desktop uninstall-desktop clean
 
 engine:
 	engine/build-engine.sh
@@ -77,7 +80,19 @@ install:
 	chmod 0755 $(LIBDIR)/zapret2/nfqws2
 	sed 's|@PREFIX@|$(PREFIX)|g' packaging/linux/$(UNIT).in > $(UNITDIR)/$(UNIT)
 	chmod 0644 $(UNITDIR)/$(UNIT)
+	$(MAKE) --no-print-directory install-desktop
 	@echo "служба установлена, но не включена: systemctl daemon-reload && systemctl enable --now tgwsone-zapret"
+
+# The menu entry and its icon (the 256 px picture of src/app.ico, cut out once into packaging/linux/tgwsone.png), where
+# desktop environments and the icon theme look for them. A separate target so it can be installed and checked on its own.
+install-desktop:
+	install -d $(APPSDIR) $(ICONDIR)
+	install -m 0644 packaging/linux/tgwsone.desktop $(APPSDIR)/tgwsone.desktop
+	install -m 0644 packaging/linux/tgwsone.png $(ICONDIR)/tgwsone.png
+
+uninstall-desktop:
+	rm -f $(APPSDIR)/tgwsone.desktop $(ICONDIR)/tgwsone.png
+	rmdir $(ICONDIR) $(DATADIR)/icons/hicolor/256x256 2>/dev/null || true
 
 # Removes exactly what install created; a directory only if nothing else is in it. What the service itself made
 # (/var/lib/tgwsone, /var/log/tgwsone) and the administrator's files (/etc/tgwsone) are not ours to remove.
@@ -86,6 +101,7 @@ uninstall:
 	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(addprefix $(LIBDIR)/,$(NATIVE_LIBS)) $(BINDIR)/tgwsone $(UNITDIR)/$(UNIT)
 	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
 	rmdir $(LIBDIR) $(UNITDIR) 2>/dev/null || true
+	$(MAKE) --no-print-directory uninstall-desktop
 
 clean:
 	rm -rf out && find src tests -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +

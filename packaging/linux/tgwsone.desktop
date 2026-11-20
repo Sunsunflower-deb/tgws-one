@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=TgwsOne
+GenericName=Telegram proxy
+GenericName[ru]=Прокси для Telegram
+Comment=A local Telegram proxy with DPI bypass
+Comment[ru]=Локальный прокси для Telegram с обходом блокировок
+Exec=tgwsone
+Icon=tgwsone
+Terminal=false
+Categories=Network;
+Keywords=Telegram;proxy;MTProto;DPI;
+Keywords[ru]=Telegram;прокси;обход блокировок;
