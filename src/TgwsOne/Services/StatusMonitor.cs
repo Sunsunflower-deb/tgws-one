@@ -59,11 +59,13 @@ internal sealed class StatusMonitor : IAsyncDisposable
         }
     }
 
+    // Nothing here needs the thread it was called on: the application's Exit handler blocks the UI thread until this is done, and
+    // an await that resumed on that thread's context would wait for the very thread that is waiting for it.
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
-        await _stop.CancelAsync();
-        try { await _loop; }
+        await _stop.CancelAsync().ConfigureAwait(false);
+        try { await _loop.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
         _stop.Dispose();
         _gate.Dispose();

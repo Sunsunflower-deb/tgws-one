@@ -214,4 +214,37 @@ public class StatusMonitorTests
 
         await rig.Monitor.RefreshNowAsync();
     }
+
+    /// <summary>A UI-thread stand-in: what is posted to it only runs when somebody pumps it, and nobody does while the thread is blocked.</summary>
+    private sealed class UnpumpedContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            // queued for a thread that is busy waiting for us: it never runs
+        }
+    }
+
+    [Fact]
+    public void Disposing_FromABlockedUiThread_DoesNotWaitForThatThread()
+    {
+        // The application's Exit handler blocks the UI thread until the monitor is disposed. If disposal needed that very thread to
+        // finish (an await that resumes on the captured context), quitting would hang for good with the window gone.
+        SynchronizationContext? before = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new UnpumpedContext());
+        try
+        {
+            var monitor = new StatusMonitor(new FakeProxyControl(), new FakeControlClient(), new FakeNetInfo(), Hour);
+
+            Task disposal = monitor.DisposeAsync().AsTask();
+
+#pragma warning disable xUnit1031   // blocking this thread is the point: it is what the Exit handler does
+            Assert.True(disposal.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), "disposal is waiting for the thread that is waiting for it");
+#pragma warning restore xUnit1031
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(before);
+        }
+    }
 }
+
