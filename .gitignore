@@ -9,16 +9,10 @@ out/
 *.wixpdb
 *.wixobj
 
-# upstream-бинарники (скачиваются скриптом, не хранятся в репозитории)
-_upstream/
-_zapret/
-_tools/
-
 # логи и локальные данные приложения
 logs/
 *.log
 TgwsOne.ini
-TgWsProxy_data/
 
 # приватный ключ подписи — только локально
 *.pfx
