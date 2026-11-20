@@ -15,6 +15,15 @@ public class AdminCliTests
     private const UnixFileMode Mode644 = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
     private const UnixFileMode Mode755 = Mode644 | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
 
+    /// <summary>
+    /// The machine as the helper sees it under pkexec: <c>PKEXEC_UID</c> says who asked, and the file handed over (by its path, and
+    /// again by its open handle) is an ordinary file owned by <paramref name="owner"/> unless told otherwise.
+    /// </summary>
+    private static AdminHost Host(string? pkexecUid = "1000", string? sudoUid = null, uint owner = 1000, int type = UnixFileMeta.Regular, uint? openedOwner = null)
+        => new(n => n switch { "PKEXEC_UID" => pkexecUid, "SUDO_UID" => sudoUid, _ => null },
+               _ => new UnixFileMeta(owner, 0x1A4, type),
+               _ => new UnixFileMeta(openedOwner ?? owner, 0x1A4));
+
     private sealed class Rig : IDisposable
     {
         private readonly TempDir _tmp = new();
@@ -51,11 +60,13 @@ public class AdminCliTests
             return path;
         }
 
-        public (int Code, string Out, string Err) Run(params string[] args)
+        public (int Code, string Out, string Err) Run(params string[] args) => RunAs(Host(), args);
+
+        public (int Code, string Out, string Err) RunAs(AdminHost host, params string[] args)
         {
             var o = new StringWriter();
             var e = new StringWriter();
-            int code = AdminCli.Run(args, Paths, OsKind.Linux, o, e);
+            int code = AdminCli.Run(args, Paths, OsKind.Linux, o, e, host);
             return (code, o.ToString().TrimEnd(), e.ToString().TrimEnd());
         }
 
@@ -229,6 +240,145 @@ public class AdminCliTests
 
         Assert.Equal(1, code);
         Assert.StartsWith("не удалось прочитать файл со стратегией", stderr);
+    }
+
+    // ----- whose file it is (Linux: the helper runs as root, so it reads only what the person who asked for it owns) -----
+
+    private const string Strategy1 = "--lua-desync=multisplit:pos=1\n";
+
+    [Fact]
+    public void Save_AFileOfSomebodyElse_IsRefused_AndNothingIsWritten()
+    {
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(pkexecUid: "1000", owner: 0), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("принадлежит другому пользователю", stderr);
+        Assert.False(Directory.Exists(rig.StrategiesDir));
+    }
+
+    [Fact]
+    public void Save_AFileSwappedForSomebodyElsesAfterTheCheck_IsRefused_ByItsOpenHandle()
+    {
+        // The path looked fine when it was checked; by the time it was opened it led to another file.
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(owner: 1000, openedOwner: 0), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("принадлежит другому пользователю", stderr);
+        Assert.False(Directory.Exists(rig.StrategiesDir));
+    }
+
+    [Fact]
+    public void Save_ASymlink_IsRefused()
+    {
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(type: UnixFileMeta.Symlink), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("символическая ссылка", stderr);
+        Assert.False(Directory.Exists(rig.StrategiesDir));
+    }
+
+    [Theory]
+    [InlineData(0x1000)]   // a pipe
+    [InlineData(0x4000)]   // a directory
+    [InlineData(0x6000)]   // a block device
+    public void Save_SomethingThatIsNotAnOrdinaryFile_IsRefused(int type)
+    {
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(type: type), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("не обычный файл", stderr);
+    }
+
+    [Fact]
+    public void Save_WithoutKnowingWhoAsked_IsRefused()
+    {
+        // Neither pkexec nor sudo started it: nobody to compare the file's owner with.
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(pkexecUid: null, sudoUid: null), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("pkexec или sudo", stderr);
+        Assert.False(Directory.Exists(rig.StrategiesDir));
+    }
+
+    [Fact]
+    public void Save_UnderSudo_UsesSudoUid()
+    {
+        using var rig = new Rig();
+
+        (int code, _, _) = rig.RunAs(Host(pkexecUid: null, sudoUid: "1000", owner: 1000), "save-strategy", "x", rig.Input(Strategy1));
+        (int other, _, _) = rig.RunAs(Host(pkexecUid: null, sudoUid: "1001", owner: 1000), "save-strategy", "y", rig.Input(Strategy1));
+
+        Assert.Equal((0, 1), (code, other));
+    }
+
+    [Fact]
+    public void Save_PkexecUid_WinsOverSudoUid()
+    {
+        using var rig = new Rig();
+
+        (int code, _, _) = rig.RunAs(Host(pkexecUid: "1000", sudoUid: "1001", owner: 1000), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(0, code);
+    }
+
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("-1")]
+    [InlineData("1000x")]
+    [InlineData("99999999999")]
+    public void Save_AnUnreadableUid_IsRefused(string uid)
+    {
+        using var rig = new Rig();
+
+        (int code, _, string stderr) = rig.RunAs(Host(pkexecUid: uid, sudoUid: "1000"), "save-strategy", "x", rig.Input(Strategy1));
+
+        Assert.Equal(1, code);
+        Assert.Contains("pkexec или sudo", stderr);   // a bad PKEXEC_UID is not quietly replaced by SUDO_UID
+    }
+
+    [Fact]
+    public void Save_RealFiles_OwnedByTheCaller_AreAccepted_ASymlinkToThemIsNot()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var rig = new Rig();
+        string input = rig.Input(Strategy1);
+        uint me = UnixFiles.Lstat(input)!.OwnerUid;
+        AdminHost real = AdminHost.Real with { GetEnv = n => n == "PKEXEC_UID" ? me.ToString() : null };
+        string link = rig.Combine("in", "link.args");
+        File.CreateSymbolicLink(link, input);
+
+        (int direct, _, _) = rig.RunAs(real, "save-strategy", "x", input);
+        (int viaLink, _, string linkErr) = rig.RunAs(real, "save-strategy", "y", link);
+
+        Assert.Equal((0, 1), (direct, viaLink));
+        Assert.Contains("символическая ссылка", linkErr);
+        Assert.False(File.Exists(rig.Strategy("y")));
+    }
+
+    [Fact]
+    public void Save_ARealFileOfRoot_IsRefused_WhenTheCallerIsNotRoot()
+    {
+        // /etc/passwd is everybody's to read, and still not a file to take a strategy from on somebody else's word.
+        if (!OperatingSystem.IsLinux() || !File.Exists("/etc/passwd")) return;
+        using var rig = new Rig();
+        uint me = UnixFiles.Lstat(rig.Input(Strategy1))!.OwnerUid;
+        if (me == 0) return;
+        AdminHost real = AdminHost.Real with { GetEnv = n => n == "PKEXEC_UID" ? me.ToString() : null };
+
+        (int code, _, string stderr) = rig.RunAs(real, "save-strategy", "x", "/etc/passwd");
+
+        Assert.Equal(1, code);
+        Assert.Contains("принадлежит другому пользователю", stderr);
     }
 
     // ----- the files a strategy names (Linux: nfqws2 drops root before it opens them) -----

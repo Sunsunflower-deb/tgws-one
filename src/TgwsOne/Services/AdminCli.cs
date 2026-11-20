@@ -1,9 +1,31 @@
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using TgwsOne.Core;
 using TgwsOne.Core.Zapret;
 
 namespace TgwsOne.Services;
+
+/// <summary>
+/// What <see cref="AdminCli"/> asks the machine: who started it and what the files it was handed are. Linux only (Windows asks
+/// nothing of this). A record of functions so that a test can say "the file belongs to somebody else" without a second user.
+/// </summary>
+internal sealed record AdminHost(Func<string, string?> GetEnv, Func<string, UnixFileMeta?> Lstat, Func<SafeFileHandle, UnixFileMeta?> Fstat)
+{
+    public static AdminHost Real { get; } = new(Environment.GetEnvironmentVariable, UnixFiles.Lstat, UnixFiles.Fstat);
+
+    /// <summary>
+    /// The user who asked for the elevation: <c>PKEXEC_UID</c> under pkexec, <c>SUDO_UID</c> under sudo. null when neither is set
+    /// (the process was not started through either) or the one that is set is not a number.
+    /// </summary>
+    public uint? Invoker()
+    {
+        string? value = GetEnv("PKEXEC_UID");
+        if (string.IsNullOrEmpty(value)) value = GetEnv("SUDO_UID");
+        return uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out uint uid) ? uid : null;
+    }
+}
 
 /// <summary>
 /// <c>tgwsone --admin save-strategy &lt;name&gt; &lt;file&gt;</c> and <c>--admin delete-strategy &lt;name&gt;</c>: the only part of the app that
@@ -25,7 +47,8 @@ internal static class AdminCli
     private const UnixFileMode PublicRead = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;   // 0644
 
     /// <param name="args">What follows <c>--admin</c>. A trailing <c>--out &lt;file&gt;</c> also gets the message (when there is no console to read it from, as after a UAC prompt).</param>
-    public static int Run(string[] args, ServicePaths paths, OsKind os, TextWriter stdout, TextWriter stderr)
+    /// <param name="host">Who started the process and what its files are; the real one unless a test says otherwise.</param>
+    public static int Run(string[] args, ServicePaths paths, OsKind os, TextWriter stdout, TextWriter stderr, AdminHost? host = null)
     {
         string? outFile = null;
         if (args.Length >= 2 && args[^2] == "--out")
@@ -36,7 +59,7 @@ internal static class AdminCli
 
         (int code, string message) = args switch
         {
-            ["save-strategy", var name, var file] => Save(name, file, paths, os),
+            ["save-strategy", var name, var file] => Save(name, file, paths, os, host ?? AdminHost.Real),
             ["delete-strategy", var name] => Delete(name, paths),
             _ => (ExitUsage, Usage),
         };
@@ -50,18 +73,41 @@ internal static class AdminCli
         return code;
     }
 
-    private static (int Code, string Message) Save(string name, string file, ServicePaths paths, OsKind os)
+    private static (int Code, string Message) Save(string name, string file, ServicePaths paths, OsKind os, AdminHost host)
     {
         if (!CustomStrategies.IsValidName(name))
             return (ExitRefused, $"недопустимое имя «{name}»: латиница в нижнем регистре, цифры и дефис, до 32 символов");
 
+        // Linux: the helper runs as root, so it reads only a file the person who started it owns (pkexec / sudo say who that is).
+        // Windows: the UAC prompt is the boundary, and the file is the user's own temp file.
+        bool unix = !OperatingSystem.IsWindows() && os == OsKind.Linux;
+
         string text;
         try
         {
-            var info = new FileInfo(file);
-            if (!info.Exists) return (ExitRefused, $"файл со стратегией не найден: {file}");
-            if (info.Length > MaxStrategyBytes) return (ExitRefused, "файл слишком большой для стратегии");
-            text = File.ReadAllText(file, new UTF8Encoding(false, throwOnInvalidBytes: true));
+            if (!File.Exists(file)) return (ExitRefused, $"файл со стратегией не найден: {file}");
+
+            uint invoker = 0;
+            if (unix)
+            {
+                if (host.Invoker() is not { } uid) return (ExitRefused, "не удалось определить, кто запустил команду: запускайте её через pkexec или sudo");
+                invoker = uid;
+                string? refused = host.Lstat(file) is { } onDisk ? SourceError(onDisk, file, invoker) : $"не удалось проверить файл со стратегией: {file}";
+                if (refused != null) return (ExitRefused, refused);
+            }
+
+            // The checks above are about the path, which can be swapped before the file is opened; what is read is the file that was
+            // opened, and it is looked at again by its handle.
+            using SafeFileHandle handle = File.OpenHandle(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (unix)
+            {
+                string? refused = host.Fstat(handle) is { } opened ? SourceError(opened, file, invoker) : $"не удалось проверить файл со стратегией: {file}";
+                if (refused != null) return (ExitRefused, refused);
+            }
+
+            if (RandomAccess.GetLength(handle) > MaxStrategyBytes) return (ExitRefused, "файл слишком большой для стратегии");
+            using var reader = new StreamReader(new FileStream(handle, FileAccess.Read), new UTF8Encoding(false, throwOnInvalidBytes: true));
+            text = reader.ReadToEnd();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
@@ -83,6 +129,16 @@ internal static class AdminCli
             return (ExitRefused, $"не удалось записать стратегию: {ex.Message}");
         }
         return (ExitOk, $"Стратегия «{name}» сохранена.");
+    }
+
+    /// <summary>Null when the file may be read: an ordinary file (not a link, not a device or a pipe) that belongs to <paramref name="invoker"/>.</summary>
+    private static string? SourceError(UnixFileMeta meta, string file, uint invoker)
+    {
+        if (meta.FileType == UnixFileMeta.Symlink) return $"{file} — символическая ссылка: укажите сам файл со стратегией";
+        if (meta.FileType != UnixFileMeta.Regular) return $"{file} — не обычный файл";
+        if (meta.OwnerUid != invoker)
+            return $"файл {file} принадлежит другому пользователю (uid {meta.OwnerUid}): стратегию можно сохранить только из своего файла";
+        return null;
     }
 
     private static (int Code, string Message) Delete(string name, ServicePaths paths)

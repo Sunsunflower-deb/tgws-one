@@ -6,10 +6,16 @@ namespace TgwsOne.Core.Tests.Zapret;
 /// <summary>The real executable's <c>--admin</c> switch: that <c>Program</c> routes to it, with the exit codes and messages a pipe or UAC helper relies on.</summary>
 public class AdminCliProcessTests
 {
-    private static (int Code, string Out, string Err) Run(string serviceRoot, params string[] args)
+    // pkexec tells the helper who asked for it in PKEXEC_UID; here that is whoever runs the tests, who also owns the files.
+    private static (int Code, string Out, string Err) Run(string serviceRoot, params string[] args) => Run(serviceRoot, true, args);
+
+    private static (int Code, string Out, string Err) Run(string serviceRoot, bool underPkexec, params string[] args)
     {
         ProcessStartInfo psi = TgwsOneProcess.StartInfo(["--admin", .. args]);
         psi.Environment["TGWS_SERVICE_ROOT"] = serviceRoot;
+        psi.Environment.Remove("SUDO_UID");
+        if (underPkexec) psi.Environment["PKEXEC_UID"] = LibC.GetEffectiveUserId().ToString();
+        else psi.Environment.Remove("PKEXEC_UID");
         using Process p = Process.Start(psi)!;
         Task<string> err = p.StandardError.ReadToEndAsync();
         string o = p.StandardOutput.ReadToEnd();
@@ -50,6 +56,22 @@ public class AdminCliProcessTests
         Assert.Equal(1, code);
         Assert.Equal("", stdout);
         Assert.StartsWith("недопустимый параметр", stderr);
+        Assert.False(Directory.Exists(Path.Combine(root, "strategies")));
+    }
+
+    [Fact]
+    public void SaveWithoutPkexecOrSudo_IsRefused_AsAnUnknownCaller()
+    {
+        using var tmp = new TempDir();
+        string root = tmp.Combine("service");
+        string input = tmp.Combine("in.args");
+        File.WriteAllText(input, "--lua-desync=multisplit:pos=1\n");
+
+        (int code, string stdout, string stderr) = Run(root, underPkexec: false, "save-strategy", "x", input);
+
+        Assert.Equal(1, code);
+        Assert.Equal("", stdout);
+        Assert.Contains("pkexec или sudo", stderr);
         Assert.False(Directory.Exists(Path.Combine(root, "strategies")));
     }
 
