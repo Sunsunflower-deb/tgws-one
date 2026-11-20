@@ -7,6 +7,7 @@ namespace TgwsOne.Tests;
 internal sealed class BypassRig : IAsyncDisposable
 {
     private readonly EditorKit _kit = new();
+    private int _snapshots;   // the snapshots the page has been told about
 
     public FakeBypassService Service { get; } = new();
     public FakeProxyControl Proxy { get; } = new();
@@ -38,13 +39,52 @@ internal sealed class BypassRig : IAsyncDisposable
                 return _kit.Editor(name);
             },
             Helper, Clipboard);
+        // Subscribed after the page's own handler, and the handlers of one snapshot run one after the other: when this counts a snapshot, the
+        // page has already applied it.
+        Monitor.Changed += _ => Interlocked.Increment(ref _snapshots);
     }
 
     /// <summary>The page as the user finds it: the monitor has polled and the page has loaded its lists.</summary>
     public async Task OpenAsync()
     {
         await Monitor.RefreshNowAsync();
+        await SettleAsync(2);   // the monitor's own poll at start and the one just made
         await Bypass.LoadCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// One poll now, and the page has applied what it found. <see cref="StatusMonitor.RefreshNowAsync"/> alone is not enough: the monitor
+    /// raises <c>Changed</c> through the context it was created on, so it returns when the update is posted, and the page may rewrite its
+    /// rows on another thread after that, under the test's feet.
+    /// </summary>
+    public async Task RefreshAsync()
+    {
+        int before = Volatile.Read(ref _snapshots);
+        await Monitor.RefreshNowAsync();
+        await SettleAsync(before + 1);
+    }
+
+    /// <summary>
+    /// Waits for the real condition: at least <paramref name="atLeast"/> snapshots reached the page and, for a moment, no more came (the
+    /// monitor also polls once by itself when it starts, at a time of its own choosing). The page does not change while this returns.
+    /// </summary>
+    private async Task SettleAsync(int atLeast)
+    {
+        DateTime limit = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            if (DateTime.UtcNow > limit) throw new TimeoutException("the page never took the monitor's snapshots");
+            int seen = Volatile.Read(ref _snapshots);
+            if (seen >= atLeast)
+            {
+                await Task.Delay(30, TestContext.Current.CancellationToken);
+                if (Volatile.Read(ref _snapshots) == seen) return;
+            }
+            else
+            {
+                await Task.Delay(10, TestContext.Current.CancellationToken);
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()

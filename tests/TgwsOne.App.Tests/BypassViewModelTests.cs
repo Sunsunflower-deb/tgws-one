@@ -191,9 +191,38 @@ public class BypassViewModelTests
         Assert.Empty(rig.Bypass.AutoRows);
 
         rig.Service.Auto.Add(Host("kws2.web.telegram.org", "split", 1));
-        await rig.Monitor.RefreshNowAsync();
+        await rig.RefreshAsync();
 
         Assert.Equal(["kws2.web.telegram.org"], rig.Bypass.AutoRows.Select(r => r.Host));
+    }
+
+    /// <summary>Delivers every posted update on a pool thread, a moment later: what a busy UI thread does to <c>Changed</c>.</summary>
+    private sealed class LateContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) => ThreadPool.QueueUserWorkItem(_ => { Thread.Sleep(40); d(state); });
+    }
+
+    // The monitor raises Changed through the context it was created on, so RefreshNowAsync returns when the update is posted, not when the
+    // page has applied it; the page then rewrites its rows on another thread while the test is reading them.
+    [Fact]
+    public async Task TheAutoTable_FollowsTheNextPoll_EvenWhenTheUpdatesArriveLate()
+    {
+        SynchronizationContext? before = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new LateContext());   // as if created on a busy UI thread
+        BypassRig rig;
+        try { rig = new BypassRig(); }
+        finally { SynchronizationContext.SetSynchronizationContext(before); }
+
+        await using (rig)
+        {
+            await rig.OpenAsync();
+            Assert.Empty(rig.Bypass.AutoRows);
+
+            rig.Service.Auto.Add(Host("kws2.web.telegram.org", "split", 1));
+            await rig.RefreshAsync();
+
+            Assert.Equal(["kws2.web.telegram.org"], rig.Bypass.AutoRows.Select(r => r.Host));
+        }
     }
 
     // ----- exclusions -----
@@ -317,7 +346,7 @@ public class BypassViewModelTests
         await using var rig = new BypassRig();
         rig.Service.Unavailable = true;
 
-        await rig.Monitor.RefreshNowAsync();
+        await rig.RefreshAsync();
         await rig.Bypass.LoadCommand.ExecuteAsync(null);   // must not throw
 
         Assert.False(rig.Bypass.ServiceReachable);
@@ -333,11 +362,11 @@ public class BypassViewModelTests
     {
         await using var rig = new BypassRig();
         rig.Service.Unavailable = true;
-        await rig.Monitor.RefreshNowAsync();
+        await rig.RefreshAsync();
         Assert.False(rig.Bypass.CanChange);
 
         rig.Service.Unavailable = false;
-        await rig.Monitor.RefreshNowAsync();
+        await rig.RefreshAsync();
 
         Assert.True(rig.Bypass.CanChange);
         Assert.True(rig.Bypass.ToggleBypassCommand.CanExecute(null));
@@ -363,7 +392,7 @@ public class BypassViewModelTests
     public async Task Load_AsksForStrategiesAndExclusions()
     {
         await using var rig = new BypassRig();
-        await rig.Monitor.RefreshNowAsync();
+        await rig.RefreshAsync();
 
         await rig.Bypass.LoadCommand.ExecuteAsync(null);
 
