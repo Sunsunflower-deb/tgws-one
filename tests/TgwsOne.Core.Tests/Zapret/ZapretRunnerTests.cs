@@ -49,6 +49,63 @@ public class ZapretRunnerTests : IDisposable
         Assert.Null(runner.LastError);
     }
 
+    // winws2 on Windows refuses to start, even as --dry-run, while another copy with the same WinDivert filter runs ("A copy of winws2 is
+    // already running with the same filter"), so a runner that checks the new command line before it puts the old child away can never
+    // switch strategy there. On Windows the child goes first.
+    [LinuxFact]
+    public async Task Apply_WhereASecondCopyIsRefused_ChildGoesFirst_StrategySwitchWorks()
+    {
+        _env.WriteCtl("single_instance=1");
+        await using ZapretRunner runner = _env.NewRunner(stopChildBeforeDryRun: true);
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+        int first = runner.Pid!.Value;
+        Assert.True(WaitFor(() => _env.Args.SequenceEqual(["--a"])));
+
+        string? error = await runner.ApplyAsync(["--b"]);
+
+        Assert.Null(error);
+        Assert.Equal(RunnerState.Running, runner.State);
+        Assert.NotEqual(first, runner.Pid);
+        Assert.True(WaitFor(() => !FakeZapretEnv.IsAlive(first)));
+        Assert.True(WaitFor(() => _env.Args.SequenceEqual(["--b"])), string.Join('|', _env.Args));
+    }
+
+    [LinuxFact]
+    public async Task Apply_WhereASecondCopyIsRefused_ChildStaysWhenNotAsked_AndTheSwitchFails()
+    {
+        // the behaviour that is right everywhere else (the old child keeps running while the new line is checked) and wrong there
+        _env.WriteCtl("single_instance=1");
+        await using ZapretRunner runner = _env.NewRunner(stopChildBeforeDryRun: false);
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+
+        string? error = await runner.ApplyAsync(["--b"]);
+
+        Assert.Contains("already running with the same filter", error);
+    }
+
+    [LinuxFact]
+    public async Task Apply_ChildGoesFirst_DryRunFails_PreviousCommandLineIsPutBack()
+    {
+        _env.WriteCtl("single_instance=1");
+        await using ZapretRunner runner = _env.NewRunner(stopChildBeforeDryRun: true);
+        Assert.Null(await runner.ApplyAsync(["--a"]));
+        int first = runner.Pid!.Value;
+        Assert.True(WaitFor(() => _env.Args.SequenceEqual(["--a"])));
+
+        _env.WriteCtl("single_instance=1", "dryrun_fail=1");
+        string? error = await runner.ApplyAsync(["--b"]);
+
+        Assert.Contains("bad option", error);
+        // the bypass is back on what it was: a new child, running the old command line
+        Assert.Equal(RunnerState.Running, runner.State);
+        Assert.NotNull(runner.Pid);
+        Assert.NotEqual(first, runner.Pid);
+        Assert.True(WaitFor(() => !FakeZapretEnv.IsAlive(first)));
+        Assert.True(WaitFor(() => FakeZapretEnv.IsAlive(runner.Pid!.Value)));
+        Assert.Equal(["--a"], _env.Args);
+        Assert.Null(runner.LastError);
+    }
+
     [LinuxFact]
     public async Task Apply_DryRunFails_NothingRunning_IsErrorState()
     {

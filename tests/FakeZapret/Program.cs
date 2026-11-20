@@ -3,6 +3,9 @@
 //   FAKEZ_CTL    control file of key=value lines, re-read on every start:
 //                  dryrun_fail=1       --dry-run prints "bad option" and exits 1
 //                  crash_after_ms=N    a real run exits with code 2 after N ms
+//                  single_instance=1   like winws2 on Windows: a second copy with the same filter is refused, even as --dry-run
+//                                      ("A copy of winws2 is already running with the same filter", exit 1); a real run holds
+//                                      the lock <FAKEZ_CTL>.instance until it ends
 //   FAKEZ_ARGS   a real run writes its argv here, one argument per line
 //   FAKEZ_HUP    every SIGHUP appends a line "HUP"
 //   --die-at-start in the argv: a real run exits with code 3 right after writing its argv
@@ -20,8 +23,25 @@ string? Ctl(string key)
     return null;
 }
 
+string instanceLock = (Environment.GetEnvironmentVariable("FAKEZ_CTL") ?? "fakez") + ".instance";
+
+FileStream? TakeInstanceLock()
+{
+    try { return new FileStream(instanceLock, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+    catch (IOException) { return null; }
+}
+
 if (args.Contains("--dry-run"))
 {
+    if (Ctl("single_instance") == "1")
+    {
+        using FileStream? free = TakeInstanceLock();
+        if (free == null)
+        {
+            Console.Error.WriteLine("A copy of winws2 is already running with the same filter");
+            return 1;
+        }
+    }
     if (Ctl("dryrun_fail") == "1")
     {
         Console.Error.WriteLine("bad option");
@@ -38,6 +58,13 @@ if (args.Contains("--die-at-start"))
 {
     Console.Error.WriteLine("fake zapret: dying at start as asked");
     return 3;
+}
+
+using FileStream? instance = Ctl("single_instance") == "1" ? TakeInstanceLock() : null;
+if (Ctl("single_instance") == "1" && instance == null)
+{
+    Console.Error.WriteLine("A copy of winws2 is already running with the same filter");
+    return 1;
 }
 
 string? hupFile = Environment.GetEnvironmentVariable("FAKEZ_HUP");

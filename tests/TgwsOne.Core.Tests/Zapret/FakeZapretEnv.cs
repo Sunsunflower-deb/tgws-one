@@ -41,8 +41,8 @@ internal sealed class FakeZapretEnv : IDisposable
         SteadyAfter: TimeSpan.FromSeconds(30), MaxCrashes: 3, CrashWindow: TimeSpan.FromSeconds(5),
         ErrorRetry: TimeSpan.FromMilliseconds(300), StartupGrace: TimeSpan.FromMilliseconds(250));
 
-    public ZapretRunner NewRunner(NftManager? nft = null, BackoffPolicy? policy = null, string? exe = null)
-        => new(exe ?? ExePath, LogFile, new AppLog(ServiceLog), nft, policy ?? FastPolicy);
+    public ZapretRunner NewRunner(NftManager? nft = null, BackoffPolicy? policy = null, string? exe = null, bool? stopChildBeforeDryRun = null)
+        => new(exe ?? ExePath, LogFile, new AppLog(ServiceLog), nft, policy ?? FastPolicy, stopChildBeforeDryRun);
 
     /// <summary>Replaces the control file (an empty call clears every setting).</summary>
     public void WriteCtl(params string[] lines) => File.WriteAllLines(Ctl, lines);

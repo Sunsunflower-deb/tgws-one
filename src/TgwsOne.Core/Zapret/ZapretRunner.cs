@@ -37,6 +37,7 @@ public sealed class ZapretRunner : IAsyncDisposable
     private readonly NftManager? _nft;
     private readonly BackoffPolicy _policy;
     private readonly ProcessCommandRunner _dryRun = new();
+    private readonly bool _stopChildBeforeDryRun;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Queue<DateTimeOffset> _crashTimes = new();
@@ -56,13 +57,20 @@ public sealed class ZapretRunner : IAsyncDisposable
     private long _sinceTicks;
     private int _restarts;
 
-    public ZapretRunner(string exe, string logFile, AppLog log, NftManager? nft, BackoffPolicy? policy = null)
+    /// <param name="stopChildBeforeDryRun">
+    /// Put the running child away before a new command line is checked with <c>--dry-run</c>. winws2 on Windows refuses to start, even
+    /// as a dry run, while another copy with the same WinDivert filter is running ("A copy of winws2 is already running with the same
+    /// filter"), so there the check can only happen with the old child gone. Elsewhere the old child keeps running during the check.
+    /// Default: on Windows.
+    /// </param>
+    public ZapretRunner(string exe, string logFile, AppLog log, NftManager? nft, BackoffPolicy? policy = null, bool? stopChildBeforeDryRun = null)
     {
         _exe = exe;
         _log = log;
         _childLog = new AppLog(logFile, publicRead: true);
         _nft = nft;
         _policy = policy ?? BackoffPolicy.Default;
+        _stopChildBeforeDryRun = stopChildBeforeDryRun ?? OperatingSystem.IsWindows();
     }
 
     public RunnerState State => _state;
@@ -89,11 +97,26 @@ public sealed class ZapretRunner : IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
+            IReadOnlyList<string>? previous = _argv;
+            bool childAway = false;
+            if (_stopChildBeforeDryRun && _child != null)
+            {
+                _epoch++;   // the dying child's exit watcher must not schedule a restart of the line that is about to be replaced
+                await KillCurrentAsync();
+                childAway = true;
+            }
+
             string? bad = await DryRunAsync(argv, linked.Token);
             if (bad != null)
             {
                 _log.Write($"zapret: проверка параметров не прошла: {bad}");
-                if (_argv == null)
+                if (childAway && previous != null)
+                {
+                    // A rejected line must not leave the bypass off: what ran before runs again.
+                    string? back = await LaunchAsync(previous, linked.Token);
+                    if (back != null) RegisterCrash(back, DateTimeOffset.UtcNow);
+                }
+                else if (_argv == null)
                 {
                     _state = RunnerState.Error;
                     _lastError = bad;
@@ -120,7 +143,6 @@ public sealed class ZapretRunner : IAsyncDisposable
                 }
             }
 
-            IReadOnlyList<string>? previous = _argv;
             _epoch++;
             await KillCurrentAsync();
             _argv = argv;
