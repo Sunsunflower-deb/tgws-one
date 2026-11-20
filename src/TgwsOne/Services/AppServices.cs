@@ -56,5 +56,17 @@ internal sealed class AppServices : IAsyncDisposable
         return new FinderViewModel(new StrategyFinder(Control, new SslTlsProbe(), new HttpDownloadProbe()));
     }
 
+    /// <summary>The connection check, with the real network probes (scripted ones when the dev switch says so).</summary>
+    public Diagnostics CreateDiagnostics()
+    {
+        if (Environment.GetEnvironmentVariable(ScriptedProbes.Variable) == "1")
+        {
+            var scripted = new ScriptedProbes(Control);
+            return new Diagnostics(Proxy, Control, new SystemNetInfo(), Settings, scripted, scripted, scripted, () => File.Exists(Paths.Engine));
+        }
+        return new Diagnostics(Proxy, Control, new SystemNetInfo(), Settings, new SocketTcpProbe(), new SslTlsProbe(), new HttpDownloadProbe(),
+                               () => File.Exists(Paths.Engine));
+    }
+
     public ValueTask DisposeAsync() => Monitor.DisposeAsync();
 }

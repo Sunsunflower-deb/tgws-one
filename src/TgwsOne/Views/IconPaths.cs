@@ -19,6 +19,8 @@ internal static class IconPaths
     public const string Error = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M15 9l-6 6 M9 9l6 6";
     public const string Check = "M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3";
 
+    public const string Dash = "M5 12h14";
+
     // Bare marks for tables (no circle around them)
     public const string TickMark = "M20 6L9 17l-5-5";
     public const string CrossMark = "M18 6L6 18 M6 6l12 12";

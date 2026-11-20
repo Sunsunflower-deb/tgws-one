@@ -5,6 +5,13 @@ using System.Net.Sockets;
 
 namespace TgwsOne.Services;
 
+/// <summary>Whether a TCP connection can be made at all: what separates "no internet" from "something cuts the handshake".</summary>
+internal interface ITcpProbe
+{
+    /// <returns>True when the connection was made within <paramref name="timeout"/>.</returns>
+    Task<bool> ConnectAsync(string host, int port, TimeSpan timeout, CancellationToken ct);
+}
+
 /// <summary>A TLS handshake with a server name: the thing DPI middleboxes look at and cut.</summary>
 internal interface ITlsProbe
 {
@@ -17,6 +24,30 @@ internal interface IHttpProbe
 {
     /// <returns><c>Ok</c> only when all <paramref name="expectedBytes"/> arrived within <paramref name="timeout"/>.</returns>
     Task<(bool Ok, TimeSpan Elapsed)> DownloadAsync(Uri url, long expectedBytes, TimeSpan timeout, CancellationToken ct);
+}
+
+/// <summary>The real <see cref="ITcpProbe"/>.</summary>
+internal sealed class SocketTcpProbe : ITcpProbe
+{
+    public async Task<bool> ConnectAsync(string host, int port, TimeSpan timeout, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(timeout);
+        try
+        {
+            using var tcp = new TcpClient();
+            await tcp.ConnectAsync(host, port, limit.Token);
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return false;   // our own time limit
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        {
+            return false;   // refused, unreachable, or the name did not resolve
+        }
+    }
 }
 
 /// <summary>

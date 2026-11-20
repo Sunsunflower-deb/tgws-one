@@ -18,6 +18,9 @@
     <DataTemplate DataType="vm:BypassViewModel">
       <v:BypassView />
     </DataTemplate>
+    <DataTemplate DataType="vm:DiagnosticsViewModel">
+      <v:DiagnosticsView />
+    </DataTemplate>
     <DataTemplate DataType="vm:PlaceholderPageViewModel">
       <StackPanel Margin="32" Spacing="8">
         <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold" />

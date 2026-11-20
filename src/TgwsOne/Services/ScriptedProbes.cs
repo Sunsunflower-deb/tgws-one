@@ -7,7 +7,7 @@ namespace TgwsOne.Services;
 /// repeatable and send nothing to Telegram or Cloudflare. Not a setting; nothing in the app turns it on. The answers follow the
 /// strategy the service is on right now, like a real run, and mirror the example table of the spec.
 /// </summary>
-internal sealed class ScriptedProbes(IControlClient control) : ITlsProbe, IHttpProbe
+internal sealed class ScriptedProbes(IControlClient control) : ITcpProbe, ITlsProbe, IHttpProbe
 {
     public const string Variable = "TGWS_FAKE_PROBES";
 
@@ -22,6 +22,13 @@ internal sealed class ScriptedProbes(IControlClient control) : ITlsProbe, IHttpP
         "aggressive" => (0, false, 0),
         _ => (4, true, 220),   // anything else, a custom strategy
     };
+
+    /// <summary>The servers are always reachable: what the strategies change is the handshake, not the connection.</summary>
+    public async Task<bool> ConnectAsync(string host, int port, TimeSpan timeout, CancellationToken ct)
+    {
+        await Task.Delay(Latency, ct);
+        return true;
+    }
 
     public async Task<TimeSpan?> HandshakeAsync(string host, int port, TimeSpan timeout, CancellationToken ct)
     {

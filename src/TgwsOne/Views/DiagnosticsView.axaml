@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.ViewModels"
+             xmlns:v="using:TgwsOne.Views"
+             x:Class="TgwsOne.Views.DiagnosticsView"
+             x:DataType="vm:DiagnosticsViewModel">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="32,28" Spacing="16" MaxWidth="720">
+
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="Проверка соединения" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button x:Name="RunButton" Grid.Column="1" Classes="accent" Padding="20,8"
+                Content="{Binding RunText}" Command="{Binding RunCommand}" />
+      </Grid>
+
+      <ProgressBar x:Name="RunProgress" IsIndeterminate="True" Height="3" IsVisible="{Binding IsRunning}" />
+
+      <TextBlock x:Name="HintText" Classes="caption" TextWrapping="Wrap"
+                 Text="Проверка смотрит на прокси, на обход DPI и на сеть и говорит, что не так и что с этим делать."
+                 IsVisible="{Binding ShowHint}" />
+
+      <Border x:Name="ChecksPanel" Classes="card" IsVisible="{Binding HasRows}">
+        <ItemsControl x:Name="CheckList" ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CheckRowViewModel">
+              <Grid ColumnDefinitions="Auto,*" Margin="0,5">
+                <v:Icon Data="{Binding IconPath}" Tone="{Binding Tone}" Width="18" Height="18"
+                        Margin="0,0,12,0" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock Text="{Binding Title}" TextWrapping="Wrap" />
+                  <TextBlock Classes="caption" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- The verdict, and the one thing to do about it. -->
+      <StackPanel x:Name="VerdictPanel" Spacing="12" IsVisible="{Binding VerdictText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Border Height="1" Background="{DynamicResource CardBorder}" />
+        <TextBlock x:Name="VerdictText" Text="{Binding VerdictText}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <Button x:Name="ActionButton" HorizontalAlignment="Left" Padding="20,8"
+                Content="{Binding ActionText}" IsVisible="{Binding HasAction}" Command="{Binding DoActionCommand}" />
+      </StackPanel>
+
+      <TextBlock x:Name="DiagnosticsErrorText" Foreground="{DynamicResource ToneRed}" TextWrapping="Wrap"
+                 Text="{Binding ErrorText}" IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

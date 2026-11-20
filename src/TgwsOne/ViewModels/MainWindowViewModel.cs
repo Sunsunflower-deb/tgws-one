@@ -27,7 +27,11 @@ internal sealed partial class MainWindowViewModel : ObservableObject, INavigator
     /// <summary>Moves to <paramref name="page"/> (one of <see cref="Pages"/>).</summary>
     public void Navigate(PageViewModel page) => SelectedPage = page;
 
-    public void Show(AppPage page, bool startCheck = false) => SelectedPage = Pages[(int)page];
+    public void Show(AppPage page, bool startCheck = false)
+    {
+        SelectedPage = Pages[(int)page];
+        if (startCheck && SelectedPage is DiagnosticsViewModel diagnostics) diagnostics.StartRun();
+    }
 
     /// <summary>A stand-in for a page that has not been built yet.</summary>
     public static PageViewModel Placeholder(AppPage page) => new PlaceholderPageViewModel(AppPageInfo.Title(page), AppPageInfo.Icon(page));

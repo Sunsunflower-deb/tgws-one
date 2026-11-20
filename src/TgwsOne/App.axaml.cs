@@ -36,11 +36,17 @@ internal sealed partial class App : Application
     }
 
     private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
-    [
-        new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav),
-        new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder),
-        MainWindowViewModel.Placeholder(AppPage.Diagnostics),
-        MainWindowViewModel.Placeholder(AppPage.Logs),
-        MainWindowViewModel.Placeholder(AppPage.Settings),
-    ]);
+    {
+        var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav);
+        var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder);
+        var diagnostics = new DiagnosticsViewModel(s.CreateDiagnostics(), nav, new DiagnosticsActions(home, bypass, s.Control, s.Monitor));
+        return
+        [
+            home,
+            bypass,
+            diagnostics,
+            MainWindowViewModel.Placeholder(AppPage.Logs),
+            MainWindowViewModel.Placeholder(AppPage.Settings),
+        ];
+    });
 }
