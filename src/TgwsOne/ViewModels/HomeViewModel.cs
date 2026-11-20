@@ -90,16 +90,7 @@ internal sealed partial class HomeViewModel : PageViewModel
         (BypassLine, BypassTone) = StatusText.BypassLine(s);
         BypassOpensPage = s.ServiceReachable;
         IsProxyRunning = s.Proxy.Running;
-        (ProxyLine, ProxyTone) = ProxyText(s.Proxy);
-    }
-
-    private (string Text, Tone Tone) ProxyText(ProxyStatus p)
-    {
-        string address = $"{_settings.Load().Host}:{p.Port}";
-        if (p.Listening) return ($"работает · {address}", Tone.Green);
-        if (p.Running) return ("запускается…", Tone.Amber);
-        if (p.PortBusyByOther) return ($"остановлен · порт {p.Port} занят другим приложением", Tone.Amber);
-        return ("остановлен", Tone.Grey);
+        (ProxyLine, ProxyTone) = StatusText.ProxyLine(s.Proxy, _settings.Load().Host.ToString());
     }
 
     /// <summary>Starts the proxy and, when the bypass service is there but off, turns it on too.</summary>

@@ -203,4 +203,24 @@ public class StatusTextTests
     {
         Assert.Equal(expected, StatusText.DisplayName(id));
     }
+
+    // ----- the proxy line (Главная and the first-run wizard show the same one) -----
+
+    [Fact]
+    public void ProxyLine_Listening_NamesTheAddress()
+        => Assert.Equal(("работает · 127.0.0.1:1443", Tone.Green), StatusText.ProxyLine(Samples.ProxyListening(), "127.0.0.1"));
+
+    [Fact]
+    public void ProxyLine_StartedButNotListeningYet_IsStarting()
+        => Assert.Equal(("запускается…", Tone.Amber),
+                        StatusText.ProxyLine(new ProxyStatus(Running: true, Listening: false, Port: 1443, PortBusyByOther: false, Pid: 4242), "127.0.0.1"));
+
+    [Fact]
+    public void ProxyLine_APortHeldByAnotherApp_SaysSo()
+        => Assert.Equal(("остановлен · порт 1443 занят другим приложением", Tone.Amber),
+                        StatusText.ProxyLine(new ProxyStatus(Running: false, Listening: false, Port: 1443, PortBusyByOther: true, Pid: null), "127.0.0.1"));
+
+    [Fact]
+    public void ProxyLine_Stopped_IsGrey()
+        => Assert.Equal(("остановлен", Tone.Grey), StatusText.ProxyLine(Samples.ProxyStopped, "127.0.0.1"));
 }

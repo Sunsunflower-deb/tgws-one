@@ -215,4 +215,35 @@ public class IniAppSettingsTests
         Assert.NotEqual(old, fresh);
         Assert.Equal(fresh, new IniAppSettings(PathsIn(tmp)).Secret());
     }
+
+    [Fact]
+    public void FirstRun_IsNotDoneOnAFreshProfile_UntilMarked_AndIsRemembered()
+    {
+        using var tmp = new TempDir();
+        var settings = new IniAppSettings(PathsIn(tmp));
+        Assert.False(settings.FirstRunDone);
+
+        settings.MarkFirstRunDone();
+
+        Assert.True(settings.FirstRunDone);
+        Assert.True(new IniAppSettings(PathsIn(tmp)).FirstRunDone);   // read back from the file
+        Assert.Equal("done", IniFile.Load(PathsIn(tmp).Ini).Get("app", "firstrun"));
+    }
+
+    [Fact]
+    public void MarkingTheFirstRun_KeepsTheOtherSettings_AndASaveDoesNotUndoIt()
+    {
+        using var tmp = new TempDir();
+        var settings = new IniAppSettings(PathsIn(tmp));
+        string secret = settings.Secret();
+        settings.Save(Parsed(settings, f => f with { Port = "1555" }), lanSharing: false, lanAddress: null);
+
+        settings.MarkFirstRunDone();
+        settings.Save(Parsed(settings, f => f with { Port = "1556" }), lanSharing: false, lanAddress: null);
+
+        var after = new IniAppSettings(PathsIn(tmp));
+        Assert.True(after.FirstRunDone);
+        Assert.Equal(secret, after.Secret());
+        Assert.Equal(1556, after.Load().Port);
+    }
 }

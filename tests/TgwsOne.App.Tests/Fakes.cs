@@ -162,6 +162,15 @@ internal sealed class FakeAppSettings : IAppSettings
     public ProxyForm ReadForm() => Form;
     public string Secret() => CurrentSecret;
 
+    public bool FirstRunDone { get; set; }
+    public int FirstRunMarks { get; private set; }
+
+    public void MarkFirstRunDone()
+    {
+        FirstRunMarks++;
+        FirstRunDone = true;
+    }
+
     public void Save(ProxySettings settings, bool lanSharing, string? lanAddress, string? previousHost = null)
     {
         Saves++;

@@ -29,26 +29,44 @@ internal sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             AppServices services = AppServices.Create(() => desktop.MainWindow);
-            desktop.MainWindow = new MainWindow { DataContext = CreateMainViewModel(services) };
+            IAutostart autostart = Autostart.ForThisMachine(Environment.ProcessPath ?? "");
+            (MainWindowViewModel main, IDiagnosticsActions actions) = CreateMainViewModel(services, autostart);
+            var window = new MainWindow { DataContext = main };
+            desktop.MainWindow = window;
             desktop.Exit += (_, _) => services.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            // First run: the wizard, over the window (not for the autostart's --tray start, which is meant to be quiet).
+            if (!services.Settings.FirstRunDone && desktop.Args is not ["--tray"])
+                window.Opened += async (_, _) => await ShowWizardAsync(window, services, actions, autostart);
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
+    private static async Task ShowWizardAsync(MainWindow owner, AppServices s, IDiagnosticsActions actions, IAutostart autostart)
     {
-        var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav, s.CreateQr);
-        var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder, s.CreateCustomEditor, s.Elevated, s.Clipboard);
-        var diagnostics = new DiagnosticsViewModel(s.CreateDiagnostics(), nav, new DiagnosticsActions(home, bypass, s.Control, s.Monitor));
-        return
-        [
-            home,
-            bypass,
-            diagnostics,
-            new LogsViewModel(LogsViewModel.DefaultTabs(s.Paths, ServicePaths.Current), new DispatcherTicker(), s.Clipboard, s.Launcher),
-            new SettingsViewModel(s.Settings, s.Proxy, s.Dialogs, s.Clipboard, new SystemNetInfo(),
-                                  Autostart.ForThisMachine(Environment.ProcessPath ?? ""), home.RestartProxyAsync, s.CreateQr),
-        ];
-    });
+        var wizard = new WizardViewModel(actions, s.Monitor, s.CreateDiagnostics(), s.Settings, autostart);
+        await new WizardWindow { DataContext = wizard }.ShowDialog(owner);
+    }
+
+    /// <summary>The window's view-model, and the page actions the wizard borrows (so «Подключить» there is the one on Главная).</summary>
+    private static (MainWindowViewModel Main, IDiagnosticsActions Actions) CreateMainViewModel(AppServices s, IAutostart autostart)
+    {
+        IDiagnosticsActions? actions = null;
+        var main = new MainWindowViewModel(nav =>
+        {
+            var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav, s.CreateQr);
+            var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder, s.CreateCustomEditor, s.Elevated, s.Clipboard);
+            actions = new DiagnosticsActions(home, bypass, s.Control, s.Monitor);
+            return
+            [
+                home,
+                bypass,
+                new DiagnosticsViewModel(s.CreateDiagnostics(), nav, actions),
+                new LogsViewModel(LogsViewModel.DefaultTabs(s.Paths, ServicePaths.Current), new DispatcherTicker(), s.Clipboard, s.Launcher),
+                new SettingsViewModel(s.Settings, s.Proxy, s.Dialogs, s.Clipboard, new SystemNetInfo(), autostart, home.RestartProxyAsync, s.CreateQr),
+            ];
+        });
+        return (main, actions ?? throw new InvalidOperationException("the page factory did not run"));
+    }
 }

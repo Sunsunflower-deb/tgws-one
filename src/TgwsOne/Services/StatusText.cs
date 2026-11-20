@@ -41,6 +41,15 @@ internal static class StatusText
         };
     }
 
+    /// <summary>The proxy's own line (Главная, the wizard): what it is doing and where it listens.</summary>
+    public static (string Text, Tone Tone) ProxyLine(ProxyStatus p, string host)
+    {
+        if (p.Listening) return ($"работает · {host}:{p.Port}", Tone.Green);
+        if (p.Running) return ("запускается…", Tone.Amber);
+        if (p.PortBusyByOther) return ($"остановлен · порт {p.Port} занят другим приложением", Tone.Amber);
+        return ("остановлен", Tone.Grey);
+    }
+
     /// <summary>
     /// The name shown for a strategy id. Technical names stay as they are called everywhere else (the CLI, the docs, the zapret
     /// manual): <c>fake-tls</c>, <c>split</c>, <c>split-stealth</c>, <c>aggressive</c> are not translated. Only the mode that is an

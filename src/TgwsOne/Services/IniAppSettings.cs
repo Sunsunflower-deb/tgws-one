@@ -27,6 +27,15 @@ internal sealed class IniAppSettings(AppPaths paths, AppLog? log = null) : IAppS
 
     public string Secret() => ProxySettingsStore.EnsureSecret(IniFile.Load(paths.Ini), log);
 
+    public bool FirstRunDone => IniFile.Load(paths.Ini).Get("app", "firstrun") == "done";
+
+    public void MarkFirstRunDone()
+    {
+        IniFile ini = IniFile.Load(paths.Ini);
+        ini.Set("app", "firstrun", "done");
+        ini.Save();
+    }
+
     public bool LanSharing => LanShare.IsEnabled(IniFile.Load(paths.Ini));
 
     public string? LanAddress => IniFile.Load(paths.Ini).Get("app", LanShare.AddressKey) is { Length: > 0 } a ? a : null;

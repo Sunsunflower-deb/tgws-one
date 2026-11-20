@@ -115,6 +115,12 @@ internal interface IAppSettings
     /// <summary>The secret; one is made first if there is none yet.</summary>
     string Secret();
 
+    /// <summary>The first-run wizard has been through (or dismissed): it is never shown again.</summary>
+    bool FirstRunDone { get; }
+
+    /// <summary>Writes <c>[app] firstrun=done</c>.</summary>
+    void MarkFirstRunDone();
+
     /// <summary>Sharing with a phone on this network is on: the proxy listens on every interface.</summary>
     bool LanSharing { get; }
 

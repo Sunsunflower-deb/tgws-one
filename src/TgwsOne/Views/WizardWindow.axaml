@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TgwsOne.ViewModels"
+        xmlns:v="using:TgwsOne.Views"
+        x:Class="TgwsOne.Views.WizardWindow"
+        x:DataType="vm:WizardViewModel"
+        Title="Добро пожаловать в TgwsOne"
+        Icon="/Assets/app.ico"
+        Width="560"
+        Height="430"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBackground}">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="28">
+
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,18">
+      <TextBlock x:Name="StepTextBlock" Classes="caption" Text="{Binding StepText}" />
+    </StackPanel>
+
+    <!-- Step 1: the connection -->
+    <StackPanel x:Name="ConnectPanel" Grid.Row="1" Spacing="14" IsVisible="{Binding IsConnectStep}">
+      <TextBlock Text="Подключение" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock x:Name="ConnectingText" Classes="caption" Text="Запускаю прокси и проверяю обход…" IsVisible="{Binding IsConnecting}" />
+      <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsConnecting}" />
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="caption" Text="Прокси" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <v:StatusDot Tone="{Binding ProxyTone}" Width="10" Height="10" VerticalAlignment="Center" />
+              <TextBlock x:Name="ProxyLineText" Text="{Binding ProxyLine}" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Classes="caption" Text="Обход DPI" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <v:StatusDot Tone="{Binding BypassTone}" Width="10" Height="10" VerticalAlignment="Center" />
+              <TextBlock x:Name="BypassLineText" Text="{Binding BypassLine}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <StackPanel x:Name="FailurePanel" Spacing="8" IsVisible="{Binding ConnectFailed}">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <v:Icon Data="{x:Static v:IconPaths.Warning}" Tone="Amber" Width="20" Height="20" VerticalAlignment="Top" />
+          <TextBlock x:Name="ProblemText" Text="{Binding Problem}" TextWrapping="Wrap" MaxWidth="440" />
+        </StackPanel>
+        <TextBlock Classes="caption" TextWrapping="Wrap"
+                   Text="Можно продолжить: всё это есть и на главной странице." />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Step 2: Telegram -->
+    <StackPanel x:Name="TelegramPanel" Grid.Row="1" Spacing="14" IsVisible="{Binding IsTelegramStep}">
+      <TextBlock Text="Telegram" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock TextWrapping="Wrap" Text="Откройте Telegram: он предложит добавить прокси." />
+      <TextBlock x:Name="TelegramHintText" Classes="caption" TextWrapping="Wrap" Text="{x:Static vm:WizardViewModel.TelegramHint}" />
+      <Button x:Name="OpenTelegramButton" HorizontalAlignment="Left" Padding="16,8" Command="{Binding OpenTelegramCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <v:Icon Data="{x:Static v:IconPaths.Send}" Width="16" Height="16" VerticalAlignment="Center" />
+          <TextBlock Text="Открыть в Telegram" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <StackPanel x:Name="TelegramDone" Orientation="Horizontal" Spacing="10" IsVisible="{Binding TelegramConnected}">
+        <v:Icon Data="{x:Static v:IconPaths.Check}" Tone="Green" Width="20" Height="20" VerticalAlignment="Center" />
+        <TextBlock Text="Telegram подключён к прокси" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock x:Name="WizardNoticeText" Classes="error" Text="{Binding Notice}"
+                 IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+
+    <!-- Step 3: done -->
+    <StackPanel x:Name="DonePanel" Grid.Row="1" Spacing="14" IsVisible="{Binding IsDoneStep}">
+      <TextBlock Text="Готово" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock TextWrapping="Wrap" Text="Всё настроено." />
+      <CheckBox x:Name="AutostartCheck" Content="Запускать при входе в систему" IsChecked="{Binding AutostartOn}" />
+      <TextBlock x:Name="DoneNoticeText" Classes="error" Text="{Binding Notice}"
+                 IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,18,0,0">
+      <Button x:Name="RetryButton" Content="Повторить" IsVisible="{Binding ConnectFailed}" Command="{Binding StartCommand}" />
+      <Button x:Name="SkipButton" Content="Пропустить" IsVisible="{Binding ShowSkip}" Command="{Binding NextCommand}" />
+      <Button x:Name="NextButton" Classes="accent" Content="Далее" MinWidth="110" HorizontalContentAlignment="Center" IsVisible="{Binding ShowNext}" Command="{Binding NextCommand}" />
+      <Button x:Name="FinishButton" Classes="accent" Content="Готово" MinWidth="110" HorizontalContentAlignment="Center" IsDefault="True"
+              IsVisible="{Binding IsDoneStep}" Command="{Binding FinishCommand}" />
+    </StackPanel>
+  </Grid>
+</Window>
