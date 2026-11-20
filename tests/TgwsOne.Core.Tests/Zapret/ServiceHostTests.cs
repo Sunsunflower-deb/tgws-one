@@ -29,15 +29,7 @@ public class ServiceHostTests : IDisposable
 
     private (int Code, string Out, string Err) Cli(string root, params string[] args)
     {
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
-        psi.ArgumentList.Add("--zapret");
-        foreach (string a in args) psi.ArgumentList.Add(a);
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo(["--zapret", .. args]);
         psi.Environment["TGWS_SERVICE_ROOT"] = root;
         using Process p = Process.Start(psi)!;
         Task<string> err = p.StandardError.ReadToEndAsync();
@@ -63,14 +55,7 @@ public class ServiceHostTests : IDisposable
         Directory.CreateDirectory(paths.LogsDir);
         File.SetUnixFileMode(paths.LogsDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
-        psi.ArgumentList.Add("--service");
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo("--service");
         psi.Environment["TGWS_SERVICE_ROOT"] = root;
         psi.Environment["TGWS_ZAPRET_EXE"] = FakeZapretEnv.ExePath;
         psi.Environment["TGWS_ZAPRET_DIR"] = tmp.Combine("bundle");
@@ -160,14 +145,7 @@ public class ServiceHostTests : IDisposable
         ServicePaths paths = ServicePaths.For(OsKind.Linux, n => n == "TGWS_SERVICE_ROOT" ? root : null);
         File.WriteAllText(paths.Endpoint, "left behind");
 
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
-        psi.ArgumentList.Add("--service");
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo("--service");
         psi.Environment["TGWS_SERVICE_ROOT"] = root;
         psi.Environment["TGWS_ZAPRET_EXE"] = tmp.Combine("no-such-nfqws2");   // the bundle is missing: an error state, not a crash
         psi.Environment["TGWS_ZAPRET_DIR"] = tmp.Combine("bundle");

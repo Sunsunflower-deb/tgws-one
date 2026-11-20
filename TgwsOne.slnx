@@ -6,6 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/FakeEngine/FakeEngine.csproj" />
     <Project Path="tests/FakeZapret/FakeZapret.csproj" />
+    <Project Path="tests/TgwsOne.App.Tests/TgwsOne.App.Tests.csproj" />
     <Project Path="tests/TgwsOne.Core.Tests/TgwsOne.Core.Tests.csproj" />
   </Folder>
 </Solution>

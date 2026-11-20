@@ -7,8 +7,15 @@ namespace TgwsOne.Core.Zapret;
 /// <summary>The control endpoint can't be reached, or didn't answer in time. The message is for the user.</summary>
 public sealed class ServiceUnavailableException(string message) : Exception(message);
 
+/// <summary>What the UI needs from <see cref="ControlClient"/>: a seam to put a fake behind in tests.</summary>
+public interface IControlClient
+{
+    /// <exception cref="ServiceUnavailableException">Nobody is listening, or nothing came back in time.</exception>
+    Task<ControlResponse> SendAsync(ControlRequest request, CancellationToken ct = default);
+}
+
 /// <summary>Sends one request to the service and returns its answer.</summary>
-public sealed class ControlClient
+public sealed class ControlClient : IControlClient
 {
     private const int MaxResponseBytes = 1024 * 1024;   // the exclusion lists can outgrow a request line
     private const int PipeConnectMs = 2000;

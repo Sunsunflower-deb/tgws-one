@@ -1,0 +1,32 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.App"
+             RequestedThemeVariant="Default">
+
+  <Application.Styles>
+    <FluentTheme />
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PageBackground" Color="#F7F8FA" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#EEF1F5" />
+          <SolidColorBrush x:Key="SidebarBorder" Color="#DCE0E6" />
+          <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="CardBorder" Color="#E2E6EC" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#5B6472" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PageBackground" Color="#181A1F" />
+          <SolidColorBrush x:Key="SidebarBackground" Color="#121418" />
+          <SolidColorBrush x:Key="SidebarBorder" Color="#2A2E35" />
+          <SolidColorBrush x:Key="CardBackground" Color="#22252B" />
+          <SolidColorBrush x:Key="CardBorder" Color="#30343C" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#A3ABB8" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

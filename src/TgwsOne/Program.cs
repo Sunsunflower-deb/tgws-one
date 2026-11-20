@@ -1,21 +1,28 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using Avalonia;
 using TgwsOne.Core;
 using TgwsOne.Core.Zapret;
 
 namespace TgwsOne;
 
-// The CLI. In SP3 this project becomes the Avalonia app; Main will keep dispatching these switches
-// before any UI starts, so scripts and the service keep working unchanged.
+// The window, or the CLI. Main looks at the arguments first and only a launch without switches starts Avalonia, so
+// scripts, the service and every --switch behave exactly as before and never load the UI libraries.
 internal static class Program
 {
     private const int ExitUsage = 64;   // EX_USAGE
+    private const int AttachParentProcess = -1;   // ATTACH_PARENT_PROCESS
 
     private static string Version => typeof(Program).Assembly.GetName().Version!.ToString(3);
 
     private static string Usage => $"""
         TgwsOne {Version} — прокси для Telegram
 
-        Использование: tgwsone <ключ>
+        Использование: tgwsone [<ключ>]
+          (без ключей) открыть окно приложения
+          --tray       запуститься в трее: подключиться и скрыть окно (так стартует автозапуск)
           --start      запустить прокси
           --stop       остановить прокси
           --status     показать состояние (код 0 — слушает, 1 — нет)
@@ -25,14 +32,35 @@ internal static class Program
           --service    запустить службу обхода DPI (для systemd / службы Windows)
         """;
 
-    private static async Task<int> Main(string[] args)
-    {
-        if (args.Length == 0)
-        {
-            Console.WriteLine(Usage);
-            return 0;
-        }
+    /// <summary>No arguments, or just <c>--tray</c>: the window. Everything else is the CLI.</summary>
+    internal static bool IsUiLaunch(string[] args) => args.Length == 0 || args is ["--tray"];
 
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        if (IsUiLaunch(args)) return RunUi(args);
+
+        // The Windows exe is a GUI one: without this a command typed in a console prints nothing.
+        if (OperatingSystem.IsWindows()) AttachParentConsole();
+        return RunCliAsync(args).GetAwaiter().GetResult();
+    }
+
+    // Not inlined: keeps the Avalonia types out of Main, so the CLI paths never touch the UI assemblies.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int RunUi(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+
+    /// <summary>Also what the previewer and the headless tests configure the app from.</summary>
+    public static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace();
+
+    [SupportedOSPlatform("windows")]
+    private static void AttachParentConsole() => AttachConsole(AttachParentProcess);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool AttachConsole(int processId);
+
+    private static async Task<int> RunCliAsync(string[] args)
+    {
         if (args[0] == "--zapret")
             return await ZapretCli.RunAsync(args[1..], ServicePaths.Current, Console.Out, Console.Error);
 

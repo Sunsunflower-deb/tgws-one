@@ -4,14 +4,26 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>TgwsOne</RootNamespace>
     <AssemblyName>TgwsOne</AssemblyName>
+    <!-- A binding that names a property the view-model doesn't have is a build error, not a blank label. -->
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
     <AssemblyName>tgwsone</AssemblyName>
   </PropertyGroup>
 
+  <!-- Windows: no console window for the UI (the CLI attaches to the parent's console), and the Windows SDK projections for toasts. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- make build-win cross-compiles on Linux: the SDK refuses a Windows target there unless told it is intended. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>..\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="TgwsOne.Core.Tests" />
+    <InternalsVisibleTo Include="TgwsOne.App.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +34,16 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.15" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The 1.x icon, linked rather than copied: legacy files stay byte-identical in SP3. -->
+    <AvaloniaResource Include="..\app.ico" Link="Assets\app.ico" />
   </ItemGroup>
 
 </Project>

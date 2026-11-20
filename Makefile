@@ -11,6 +11,9 @@ UNITDIR    := $(DESTDIR)$(PREFIX)/lib/systemd/system
 UNIT       := tgwsone-zapret.service
 ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
 LISTS_SRC  := $(PUB)/$(RID_LINUX)/lists
+# The UI's native libraries: publish leaves them next to the single-file executable instead of inside it (a bundled copy
+# would have to be unpacked into a home directory first, which the root-run --service can't count on).
+NATIVE_LIBS := libSkiaSharp.so libHarfBuzzSharp.so
 
 .PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall clean
 
@@ -40,11 +43,16 @@ build-win:
 	cp -a out/zapret2/win-x64 $(PUB)/win-x64/zapret2
 	mkdir -p $(PUB)/win-x64/lists && cp lists/*.txt $(PUB)/win-x64/lists/
 
+# Tests never get a display: the app opens its window when started without a switch, and a test run must not be able to
+# put one on the desktop of whoever runs it (the UI tests are headless, the cross-process ones pass explicit switches).
+NO_DISPLAY := env -u DISPLAY -u WAYLAND_DISPLAY
+
 test:
-	dotnet test tests/TgwsOne.Core.Tests
+	$(NO_DISPLAY) dotnet test tests/TgwsOne.Core.Tests
+	$(NO_DISPLAY) dotnet test tests/TgwsOne.App.Tests
 
 test-engine:
-	TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine dotnet test tests/TgwsOne.Core.Tests --filter "FullyQualifiedName~RealEngine"
+	$(NO_DISPLAY) TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine dotnet test tests/TgwsOne.Core.Tests --filter "FullyQualifiedName~RealEngine"
 
 run:
 	$(APP_BIN) $(ARGS)
@@ -58,6 +66,7 @@ install:
 	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
 	install -d $(LIBDIR) $(BINDIR) $(UNITDIR)
 	install -m 0755 $(APP_BIN) $(LIBDIR)/tgwsone
+	for lib in $(NATIVE_LIBS); do install -m 0755 $(PUB)/$(RID_LINUX)/$$lib $(LIBDIR)/$$lib; done
 	install -m 0755 $(ENGINE_BIN) $(LIBDIR)/tgws-engine
 	ln -sf ../lib/tgwsone/tgwsone $(BINDIR)/tgwsone
 	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
@@ -73,7 +82,7 @@ install:
 # (/var/lib/tgwsone, /var/log/tgwsone) and the administrator's files (/etc/tgwsone) are not ours to remove.
 # A service that was enabled has to be stopped first: systemctl disable --now tgwsone-zapret
 uninstall:
-	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(BINDIR)/tgwsone $(UNITDIR)/$(UNIT)
+	rm -f $(LIBDIR)/tgwsone $(LIBDIR)/tgws-engine $(addprefix $(LIBDIR)/,$(NATIVE_LIBS)) $(BINDIR)/tgwsone $(UNITDIR)/$(UNIT)
 	rm -rf $(LIBDIR)/zapret2 $(LIBDIR)/lists
 	rmdir $(LIBDIR) $(UNITDIR) 2>/dev/null || true
 

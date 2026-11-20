@@ -59,15 +59,7 @@ public class CliZapretTests : IDisposable
 
     private static (int Code, string Out, string Err) RunProcess(string serviceRoot, params string[] args)
     {
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
-        psi.ArgumentList.Add("--zapret");
-        foreach (string a in args) psi.ArgumentList.Add(a);
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo(["--zapret", .. args]);
         psi.Environment["TGWS_SERVICE_ROOT"] = serviceRoot;
 
         using Process p = Process.Start(psi)!;
@@ -266,11 +258,10 @@ public class CliZapretTests : IDisposable
     {
         using var tmp = new TempDir();
 
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet") { RedirectStandardOutput = true, UseShellExecute = false };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo("--help");   // no arguments at all opens the window since SP3
         using Process p = Process.Start(psi)!;
         string o = p.StandardOutput.ReadToEnd();
-        p.WaitForExit();
+        Assert.True(p.WaitForExit(30_000), "CLI did not exit");
 
         Assert.Contains("--zapret", o);
         Assert.Contains("--service", o);

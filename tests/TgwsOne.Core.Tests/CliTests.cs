@@ -16,14 +16,7 @@ public class CliTests : IDisposable
 
     private (int Code, string Out, string Err) RunCli(params string[] args)
     {
-        var psi = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "TgwsOne.dll"));
-        foreach (string a in args) psi.ArgumentList.Add(a);
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo(args);
         foreach (var (k, v) in _env.ChildEnv) psi.Environment[k] = v;
 
         using Process p = Process.Start(psi)!;
@@ -206,10 +199,13 @@ public class CliTests : IDisposable
         Assert.Equal("", r.Out);
     }
 
-    [Fact]
-    public void Cli_NoArguments_PrintsUsage_Exit0()
+    // From SP3 on, no arguments (or only --tray) start the window; the usage text is what --help prints.
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    public void Cli_Help_PrintsUsage_Exit0(string flag)
     {
-        var r = RunCli();
+        var r = RunCli(flag);
 
         Assert.Equal(0, r.Code);
         Assert.Contains("--start", r.Out);
