@@ -247,4 +247,28 @@ public class ElevatedHelperTests
         // Smoke test: it finds its own executable and, under the dotnet host, the assembly that is running.
         Assert.NotNull(ElevatedHelper.ForThisMachine());
     }
+
+    // ----- what is elevated -----
+
+    [Fact]
+    public void TheRealExecutable_IsElevatedAsItIs()
+    {
+        Assert.Empty(ElevatedHelper.LeadingArgsFor("/usr/lib/tgwsone/tgwsone"));
+        Assert.Empty(ElevatedHelper.LeadingArgsFor(@"C:\Program Files\TgwsOne\TgwsOne.exe"));
+    }
+
+    [Fact]
+    public void ARunThroughTheDotnetHost_ElevatesTheDll_NotDotnetAlone()
+    {
+        // Found from the base directory and the assembly's name: Assembly.Location is empty in a single-file app, and the
+        // build refuses code that asks it (IL3000), which is how this was found.
+        string[] leading = ElevatedHelper.LeadingArgsFor("/usr/bin/dotnet");
+
+        string dll = Assert.Single(leading);
+        Assert.True(Path.IsPathRooted(dll));
+        Assert.EndsWith(".dll", dll);
+        Assert.True(File.Exists(dll), $"{dll} is not the application's dll");
+        Assert.Equal(typeof(ElevatedHelper).Assembly.GetName().Name, Path.GetFileNameWithoutExtension(dll));
+    }
 }
+

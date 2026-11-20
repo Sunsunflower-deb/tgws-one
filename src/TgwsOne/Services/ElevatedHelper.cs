@@ -58,13 +58,19 @@ internal sealed class ElevatedHelper : IElevatedHelper
     public static ElevatedHelper ForThisMachine()
     {
         string exe = Environment.ProcessPath ?? "tgwsone";
-        // A development run goes through the dotnet host: elevating "dotnet" alone would run nothing of ours.
-        string[] leading = Path.GetFileNameWithoutExtension(exe) == "dotnet" && System.Reflection.Assembly.GetEntryAssembly()?.Location is { Length: > 0 } dll
-            ? [dll]
-            : [];
-        return new ElevatedHelper(new ProcessCommandRunner(TimeSpan.FromMinutes(5)), exe, leading, FindOnPath, OperatingSystem.IsWindows() ? RunWithUac : null,
-                                  Path.GetTempPath());
+        return new ElevatedHelper(new ProcessCommandRunner(TimeSpan.FromMinutes(5)), exe, LeadingArgsFor(exe), FindOnPath,
+                                  OperatingSystem.IsWindows() ? RunWithUac : null, Path.GetTempPath());
     }
+
+    /// <summary>
+    /// What goes before <c>--admin</c>: nothing for the real executable; for a development run through the dotnet host the dll,
+    /// because elevating "dotnet" alone would run nothing of ours. The dll is found from the base directory and the assembly's
+    /// name, not from <c>Assembly.Location</c>, which is empty in a single-file app.
+    /// </summary>
+    internal static string[] LeadingArgsFor(string exe)
+        => Path.GetFileNameWithoutExtension(exe) == "dotnet"
+            ? [Path.Combine(AppContext.BaseDirectory, typeof(ElevatedHelper).Assembly.GetName().Name + ".dll")]
+            : [];
 
     public async Task<AdminOutcome> SaveStrategyAsync(string name, string text, CancellationToken ct = default)
     {
