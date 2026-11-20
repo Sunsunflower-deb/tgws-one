@@ -30,6 +30,7 @@ internal static class IconPaths
     public const string More = "M5 12h.01 M12 12h.01 M19 12h.01";
     public const string Close = "M18 6L6 18 M6 6l12 12";
     public const string Copy = "M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1";
+    public const string Qr = "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h3v3h-3z M20 14v.01 M14 20h.01 M17 17h4v4h-4z";
     public const string Send = "M22 2L11 13 M22 2l-7 20-4-9-9-4 20-7z";
     public const string Key = "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 }

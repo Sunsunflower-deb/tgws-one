@@ -56,6 +56,9 @@ internal sealed class AppServices : IAsyncDisposable
         return new FinderViewModel(new StrategyFinder(Control, new SslTlsProbe(), new HttpDownloadProbe()));
     }
 
+    /// <summary>A «QR для телефона» window's view-model, from the saved settings and this machine's network as they are now.</summary>
+    public QrViewModel CreateQr() => new(Settings, new SystemNetInfo(), Clipboard);
+
     /// <summary>The connection check, with the real network probes (scripted ones when the dev switch says so).</summary>
     public Diagnostics CreateDiagnostics()
     {

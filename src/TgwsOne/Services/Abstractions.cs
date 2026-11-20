@@ -151,4 +151,7 @@ internal interface IDialogService
 
     /// <summary>Shows the strategy finder over the main window; returns when its window is closed.</summary>
     Task ShowFinderAsync(FinderViewModel finder);
+
+    /// <summary>Shows the code for a phone over the main window; returns when its window is closed.</summary>
+    Task ShowQrAsync(QrViewModel qr);
 }

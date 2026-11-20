@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TgwsOne.ViewModels"
+        xmlns:v="using:TgwsOne.Views"
+        x:Class="TgwsOne.Views.QrDialog"
+        x:DataType="vm:QrViewModel"
+        Title="QR для телефона"
+        Width="440"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PageBackground}">
+
+  <StackPanel Margin="24" Spacing="16">
+
+    <StackPanel x:Name="CodePanel" Spacing="12" IsVisible="{Binding HasCode}">
+      <!-- Always dark on white, in either theme: a light code on a dark ground is one many phones will not read. -->
+      <Border Background="White" CornerRadius="12" Padding="12" HorizontalAlignment="Center">
+        <Image x:Name="QrImage" Width="280" Height="280" RenderOptions.BitmapInterpolationMode="None"
+               Source="{Binding Png, Converter={x:Static v:QrConverters.PngToBitmap}}" />
+      </Border>
+      <TextBlock x:Name="AddressText" Classes="caption" HorizontalAlignment="Center"
+                 Text="{Binding AddressText, StringFormat='Адрес: {0}'}" />
+      <SelectableTextBlock x:Name="LinkText" Text="{Binding Link}" TextWrapping="Wrap" FontSize="11"
+                           FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, Monospace" />
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button x:Name="CopyButton" Content="Копировать" Command="{Binding CopyCommand}" />
+        <TextBlock x:Name="NoticeText" Classes="caption" VerticalAlignment="Center" Text="{Binding Notice}"
+                   IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+    </StackPanel>
+
+    <TextBlock x:Name="NoCodeText" TextWrapping="Wrap" Text="{x:Static vm:QrViewModel.NoAddressText}" IsVisible="{Binding HasNoCode}" />
+
+    <TextBlock x:Name="NoteText" Classes="caption" TextWrapping="Wrap" LineHeight="18" Text="{x:Static vm:QrViewModel.Note}" />
+
+    <Button x:Name="CloseButton" Content="Закрыть" IsCancel="True" IsDefault="True" MinWidth="96"
+            HorizontalAlignment="Right" Click="OnClose" />
+  </StackPanel>
+</Window>

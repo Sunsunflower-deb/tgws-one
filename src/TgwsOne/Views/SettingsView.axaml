@@ -30,6 +30,8 @@
                         SelectedItem="{Binding SelectedLanAddress}" IsVisible="{Binding !ShowNoAddress}" />
               <TextBlock x:Name="NoAddressText" Classes="caption" TextWrapping="Wrap"
                          Text="{x:Static vm:SettingsViewModel.NoAddressText}" IsVisible="{Binding ShowNoAddress}" />
+              <Button x:Name="ShowQrButton" Content="Показать QR…" Command="{Binding ShowQrCommand}"
+                      IsVisible="{Binding !ShowNoAddress}" />
             </StackPanel>
           </StackPanel>
         </StackPanel>

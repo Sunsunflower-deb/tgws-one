@@ -20,7 +20,8 @@ internal sealed class HomeRig : IAsyncDisposable
     public HomeRig()
     {
         Monitor = new StatusMonitor(Proxy, Control, Net, TimeSpan.FromHours(1));
-        Home = new HomeViewModel(Proxy, Control, Monitor, Settings, Launcher, Clipboard, Dialogs, Navigator);
+        Home = new HomeViewModel(Proxy, Control, Monitor, Settings, Launcher, Clipboard, Dialogs, Navigator,
+                                 () => new QrViewModel(Settings, Net, Clipboard));
     }
 
     /// <summary>How many times the service was told <paramref name="cmd"/>.</summary>

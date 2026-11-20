@@ -23,7 +23,8 @@ public class SettingsViewTests
             if (withAddress)
                 Net.SetInterfaces(new NetInterfaceInfo("enp5s0", "Network adapter", true, NetKind.Ethernet,
                     [IPAddress.Parse("192.168.18.20")], [IPAddress.Parse("192.168.18.1")]));
-            Vm = new SettingsViewModel(Settings, new FakeProxyControl(), new FakeDialogs(), new FakeClipboard(), Net, new FakeAutostart(), () => Task.CompletedTask);
+            Vm = new SettingsViewModel(Settings, new FakeProxyControl(), new FakeDialogs(), new FakeClipboard(), Net, new FakeAutostart(), () => Task.CompletedTask,
+                                       () => new QrViewModel(Settings, Net, new FakeClipboard()));
             View = new SettingsView { DataContext = Vm };
             new Window { Content = View, Width = 820, Height = 900 }.Show();
             Dispatcher.UIThread.RunJobs();

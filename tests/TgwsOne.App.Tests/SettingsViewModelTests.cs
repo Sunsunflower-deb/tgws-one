@@ -27,7 +27,7 @@ public class SettingsViewModelTests
             {
                 Restarts++;
                 return Task.CompletedTask;
-            });
+            }, () => new QrViewModel(Settings, Net, Clipboard));
         }
     }
 

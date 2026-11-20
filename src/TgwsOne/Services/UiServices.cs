@@ -21,6 +21,12 @@ internal sealed class AvaloniaDialogService(Func<Window?> owner) : IDialogServic
         if (owner() is not { } window) return;
         await new FinderDialog { DataContext = finder }.ShowDialog(window);
     }
+
+    public async Task ShowQrAsync(QrViewModel qr)
+    {
+        if (owner() is not { } window) return;
+        await new QrDialog { DataContext = qr }.ShowDialog(window);
+    }
 }
 
 /// <summary>The real <see cref="ITicker"/>: a timer of the UI thread, so a tick can touch the screen's data without marshalling.</summary>

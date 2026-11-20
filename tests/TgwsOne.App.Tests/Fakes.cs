@@ -215,6 +215,15 @@ internal sealed class FakeDialogs : IDialogService
         FindersShown++;
         if (WhileFinderOpen is { } work) await work(finder);
     }
+
+    /// <summary>The code windows that were shown, in order.</summary>
+    public List<TgwsOne.ViewModels.QrViewModel> QrsShown { get; } = [];
+
+    public Task ShowQrAsync(TgwsOne.ViewModels.QrViewModel qr)
+    {
+        QrsShown.Add(qr);
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeNavigator : TgwsOne.ViewModels.INavigator

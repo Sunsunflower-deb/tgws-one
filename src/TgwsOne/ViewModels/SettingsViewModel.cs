@@ -19,6 +19,7 @@ internal sealed partial class SettingsViewModel : PageViewModel
     private readonly INetInfo _net;
     private readonly IAutostart _autostart;
     private readonly Func<Task> _restartProxy;
+    private readonly Func<QrViewModel> _createQr;
 
     private bool _loading;
     private string? _hostBeforeSharing;
@@ -66,9 +67,10 @@ internal sealed partial class SettingsViewModel : PageViewModel
     private bool _isBusy;
 
     public SettingsViewModel(IAppSettings settings, IProxyControl proxy, IDialogService dialogs, IClipboardService clipboard,
-                             INetInfo net, IAutostart autostart, Func<Task> restartProxy)
+                             INetInfo net, IAutostart autostart, Func<Task> restartProxy, Func<QrViewModel> createQr)
         : base(AppPageInfo.Title(AppPage.Settings), AppPageInfo.Icon(AppPage.Settings))
     {
+        _createQr = createQr;
         _settings = settings;
         _proxy = proxy;
         _dialogs = dialogs;
@@ -240,6 +242,23 @@ internal sealed partial class SettingsViewModel : PageViewModel
                 case nameof(ProxyForm.LogMaxMb): LogMaxMbError = e.Message; break;
             }
         }
+    }
+
+    // ----- the code for a phone -----
+
+    /// <summary>
+    /// The code is made from what is saved: with sharing only ticked and not yet saved the proxy is not listening on the network
+    /// and the port may be another, so it asks to save first rather than show a code that would not work.
+    /// </summary>
+    [RelayCommand]
+    private async Task ShowQrAsync()
+    {
+        if (!_settings.LanSharing)
+        {
+            Notice = "Сначала сохраните настройки: раздача в сеть ещё не включена.";
+            return;
+        }
+        await _dialogs.ShowQrAsync(_createQr());
     }
 
     // ----- the secret and the link -----

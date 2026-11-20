@@ -67,6 +67,11 @@
                       <v:Icon Data="{x:Static v:IconPaths.Copy}" Width="16" Height="16" />
                     </MenuItem.Icon>
                   </MenuItem>
+                  <MenuItem Header="QR для телефона" Command="{Binding ShowQrCommand}">
+                    <MenuItem.Icon>
+                      <v:Icon Data="{x:Static v:IconPaths.Qr}" Width="16" Height="16" />
+                    </MenuItem.Icon>
+                  </MenuItem>
                   <MenuItem Header="Новый секрет…" Command="{Binding NewSecretCommand}">
                     <MenuItem.Icon>
                       <v:Icon Data="{x:Static v:IconPaths.Key}" Width="16" Height="16" />

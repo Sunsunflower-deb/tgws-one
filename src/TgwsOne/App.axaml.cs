@@ -38,7 +38,7 @@ internal sealed partial class App : Application
 
     private static MainWindowViewModel CreateMainViewModel(AppServices s) => new(nav =>
     {
-        var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav);
+        var home = new HomeViewModel(s.Proxy, s.Control, s.Monitor, s.Settings, s.Launcher, s.Clipboard, s.Dialogs, nav, s.CreateQr);
         var bypass = new BypassViewModel(s.Control, s.Monitor, s.Dialogs, s.CreateFinder);
         var diagnostics = new DiagnosticsViewModel(s.CreateDiagnostics(), nav, new DiagnosticsActions(home, bypass, s.Control, s.Monitor));
         return
@@ -48,7 +48,7 @@ internal sealed partial class App : Application
             diagnostics,
             new LogsViewModel(LogsViewModel.DefaultTabs(s.Paths, ServicePaths.Current), new DispatcherTicker(), s.Clipboard, s.Launcher),
             new SettingsViewModel(s.Settings, s.Proxy, s.Dialogs, s.Clipboard, new SystemNetInfo(),
-                                  Autostart.ForThisMachine(Environment.ProcessPath ?? ""), home.RestartProxyAsync),
+                                  Autostart.ForThisMachine(Environment.ProcessPath ?? ""), home.RestartProxyAsync, s.CreateQr),
         ];
     });
 }

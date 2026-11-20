@@ -43,6 +43,7 @@ internal sealed partial class HomeViewModel : PageViewModel
     private readonly IClipboardService _clipboard;
     private readonly IDialogService _dialogs;
     private readonly INavigator _navigator;
+    private readonly Func<QrViewModel> _createQr;
 
     [ObservableProperty] private string _headline = "";
     [ObservableProperty] private Tone _headlineTone = Tone.Grey;
@@ -61,10 +62,13 @@ internal sealed partial class HomeViewModel : PageViewModel
     [NotifyCanExecuteChangedFor(nameof(ConnectCommand), nameof(DisconnectCommand), nameof(NewSecretCommand), nameof(RunBannerActionCommand))]
     private bool _isBusy;
 
+    /// <param name="createQr">A new «QR для телефона» window's view-model, made when it is asked for (it reads the settings then).</param>
     public HomeViewModel(IProxyControl proxy, IControlClient control, StatusMonitor monitor, IAppSettings settings,
-                         ILauncher launcher, IClipboardService clipboard, IDialogService dialogs, INavigator navigator)
+                         ILauncher launcher, IClipboardService clipboard, IDialogService dialogs, INavigator navigator,
+                         Func<QrViewModel> createQr)
         : base(AppPageInfo.Title(AppPage.Home), AppPageInfo.Icon(AppPage.Home))
     {
+        _createQr = createQr;
         _proxy = proxy;
         _control = control;
         _monitor = monitor;
@@ -154,6 +158,18 @@ internal sealed partial class HomeViewModel : PageViewModel
     {
         await _clipboard.SetTextAsync(_settings.TelegramLink());
         Notice = "Ссылка скопирована";
+    }
+
+    /// <summary>The code for a phone on this network: only there is one to show while sharing is on, so otherwise this goes to the setting.</summary>
+    [RelayCommand]
+    private async Task ShowQrAsync()
+    {
+        if (!_settings.LanSharing)
+        {
+            _navigator.Show(AppPage.Settings);
+            return;
+        }
+        await _dialogs.ShowQrAsync(_createQr());
     }
 
     /// <summary>A new secret: the Telegram entry made from the old one stops working, so this asks first, and offers the restart that makes it take effect.</summary>
