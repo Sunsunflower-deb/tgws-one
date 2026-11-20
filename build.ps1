@@ -114,6 +114,17 @@ foreach ($rel in @("installer\TgwsOne.wxs", "src\app.ico", "README.md", "LICENSE
 }
 
 # ---------- staging ----------
+# Папка для дерева стирается целиком, а путь к ней задаёт вызывающий: не позволяем указать на корень диска, на папку
+# скрипта, на папку приложения или на любую папку над ними (-StageDir C:\ и опечатки такого рода).
+$stageFull = [System.IO.Path]::GetFullPath($StageDir).TrimEnd('\') + '\'
+foreach ($protected in @($root, $AppDir, (Split-Path -Parent $Engine)))
+{
+    $p = [System.IO.Path]::GetFullPath($protected).TrimEnd('\') + '\'
+    if ($p.StartsWith($stageFull, [System.StringComparison]::OrdinalIgnoreCase))
+    {
+        throw "-StageDir $StageDir стёрла бы ${protected} — укажите отдельную папку для дерева сборки"
+    }
+}
 Write-Host "staging -> $StageDir"
 Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
