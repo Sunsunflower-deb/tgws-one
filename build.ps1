@@ -134,15 +134,36 @@ $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
 $env:DOTNET_ROLL_FORWARD = "LatestMajor"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Out) | Out-Null
 
+# wix.exe — приложение-обёртка (apphost) .NET. На Windows без полной поддержки CET (нелатаная Windows 10, как образ сборочной
+# виртуальной машины, build 19045.2965) apphost .NET 9+/10 падает при старте: «Your Windows doesn't fully support CET»,
+# код 0x80131506; сам dotnet.exe при этом запускается нормально. Тогда wix запускается как `dotnet wix.dll` из папки
+# инструмента, с теми же аргументами. На обновлённой Windows (в том числе на раннерах GitHub Actions) срабатывает обычный путь.
+function Invoke-Wix([string[]]$WixArguments)
+{
+    if (-not (Get-Command wix -ErrorAction SilentlyContinue))
+    {
+        throw "wix не найден: dotnet tool install --global wix --version 5.0.2"
+    }
+    & wix @WixArguments
+    if ($LASTEXITCODE -ne -2146233082) { return }   # 0x80131506
+
+    $dll = Get-ChildItem (Join-Path $env:USERPROFILE ".dotnet\tools\.store\wix") -Recurse -Filter wix.dll -ErrorAction SilentlyContinue |
+           Select-Object -First 1
+    if (-not $dll) { throw "wix.exe не запускается (CET), а wix.dll для запуска через dotnet не найден" }
+    Write-Host "wix.exe не стартует (Windows без полной поддержки CET): запускаю как dotnet wix.dll"
+    & dotnet $dll.FullName @WixArguments
+}
+
 Write-Host "wix build -> $Out"
-& wix build -arch x64 `
-    -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext `
-    -d Version=$Version `
-    -d StageDir="$StageDir" `
-    -d IconFile="$(Join-Path $root 'src\app.ico')" `
-    -pdbtype none `
-    -o $Out `
-    (Join-Path $root "installer\TgwsOne.wxs")
+Invoke-Wix @(
+    "build", "-arch", "x64",
+    "-ext", "WixToolset.Util.wixext", "-ext", "WixToolset.Firewall.wixext",
+    "-d", "Version=$Version",
+    "-d", "StageDir=$StageDir",
+    "-d", "IconFile=$(Join-Path $root 'src\app.ico')",
+    "-pdbtype", "none",
+    "-o", $Out,
+    (Join-Path $root "installer\TgwsOne.wxs"))
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
 
 Sign-File $Out
