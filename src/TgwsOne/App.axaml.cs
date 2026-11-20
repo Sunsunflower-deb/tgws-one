@@ -74,9 +74,17 @@ internal sealed partial class App : Application
             else
             {
                 desktop.MainWindow = window;
-                // First run: the wizard, over the window.
+                // First run: the wizard, over the window. Once: the window may be opened again after it was hidden to the tray.
                 if (!services.Settings.FirstRunDone)
-                    window.Opened += async (_, _) => await ShowWizardAsync(window, services, pages.Actions, autostart);
+                {
+                    MainWindow main = window;
+                    void ShowWizardOnce(object? sender, EventArgs e)
+                    {
+                        main.Opened -= ShowWizardOnce;
+                        _ = ShowWizardAsync(main, services, pages.Actions, autostart);
+                    }
+                    main.Opened += ShowWizardOnce;
+                }
             }
         }
 
