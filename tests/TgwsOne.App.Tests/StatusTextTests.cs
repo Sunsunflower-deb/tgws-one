@@ -145,8 +145,10 @@ public class StatusTextTests
     }
 
     [Theory]
-    [InlineData("split", "включён · Разрезание")]
-    [InlineData("fake-tls", "включён · Фейковый TLS")]
+    [InlineData("split", "включён · split")]
+    [InlineData("fake-tls", "включён · fake-tls")]
+    [InlineData("split-stealth", "включён · split-stealth")]
+    [InlineData("aggressive", "включён · aggressive")]
     [InlineData("custom:my-isp", "включён · my-isp (своя)")]
     public void BypassLine_RunningAnotherStrategy_ShowsItsDisplayName(string strategy, string expected)
     {
@@ -189,10 +191,10 @@ public class StatusTextTests
 
     [Theory]
     [InlineData("auto", "Авто (рекомендуется)")]
-    [InlineData("fake-tls", "Фейковый TLS")]
-    [InlineData("split", "Разрезание")]
-    [InlineData("split-stealth", "Разрезание (скрытное)")]
-    [InlineData("aggressive", "Агрессивная")]
+    [InlineData("fake-tls", "fake-tls")]            // the technical names are not translated
+    [InlineData("split", "split")]
+    [InlineData("split-stealth", "split-stealth")]
+    [InlineData("aggressive", "aggressive")]
     [InlineData("custom:x", "x (своя)")]
     [InlineData("custom:my-isp", "my-isp (своя)")]
     [InlineData("something-new", "something-new")]

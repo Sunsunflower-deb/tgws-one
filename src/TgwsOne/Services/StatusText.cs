@@ -41,14 +41,14 @@ internal static class StatusText
         };
     }
 
-    /// <summary>The name shown for a strategy id: the built-ins in Russian, <c>custom:x</c> as «x (своя)».</summary>
+    /// <summary>
+    /// The name shown for a strategy id. Technical names stay as they are called everywhere else (the CLI, the docs, the zapret
+    /// manual): <c>fake-tls</c>, <c>split</c>, <c>split-stealth</c>, <c>aggressive</c> are not translated. Only the mode that is an
+    /// ordinary word, <c>auto</c>, gets a Russian label, and <c>custom:x</c> is «x (своя)».
+    /// </summary>
     public static string DisplayName(string strategyId) => strategyId switch
     {
         BuiltInStrategies.Auto => "Авто (рекомендуется)",
-        BuiltInStrategies.FakeTls => "Фейковый TLS",
-        BuiltInStrategies.Split => "Разрезание",
-        BuiltInStrategies.SplitStealth => "Разрезание (скрытное)",
-        BuiltInStrategies.Aggressive => "Агрессивная",
         _ when strategyId.StartsWith("custom:", StringComparison.Ordinal) && strategyId.Length > "custom:".Length
             => $"{strategyId["custom:".Length..]} (своя)",
         _ => strategyId,
