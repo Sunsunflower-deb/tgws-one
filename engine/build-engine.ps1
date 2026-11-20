@@ -79,7 +79,7 @@ try {
     $flags = '--host', '--port', '--secret', '--dc-ip', '--no-cfproxy', '--no-h2', '--no-secure', '--cfproxy-domain',
              '--cfproxy-worker-domain', '--verbose', '--log-file', '--log-max-mb', '--log-backups', '--buf-kb', '--pool-size'
     foreach ($flag in $flags) {
-        if (-not $help.Contains($flag)) { throw "engine --help does not list $flag: EngineCommand and this build disagree" }
+        if (-not $help.Contains($flag)) { throw "engine --help does not list ${flag}: EngineCommand and this build disagree" }
     }
 
     $size = [math]::Round((Get-Item -LiteralPath $exe).Length / 1MB, 1)
