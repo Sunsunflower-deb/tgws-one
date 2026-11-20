@@ -36,14 +36,27 @@ internal sealed class TrayRig : IAsyncDisposable
 
     public TrayItem Item(string text) => Tray.Items.Single(i => i.Text == text);
 
-    /// <summary>Waits for the strategies the tray loads by itself once it sees the service.</summary>
+    /// <summary>
+    /// Waits for the strategies the tray loads by itself once it sees the service. Not just "the list is not empty": it is filled
+    /// one item at a time and the rest of the load (the custom ones) follows, so a test that took its baseline after the first
+    /// item would count the load's own notifications as its own. Done is the whole list there and the tray quiet for a moment.
+    /// </summary>
     public async Task WaitForStrategiesAsync()
     {
         DateTime limit = DateTime.UtcNow.AddSeconds(5);
-        while (Bypass.Strategies.Count == 0)
+        while (true)
         {
             if (DateTime.UtcNow > limit) throw new TimeoutException("the strategies never loaded");
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+            if (Bypass.Strategies.Count >= Service.StrategyIds.Count)
+            {
+                int before = Changes;
+                await Task.Delay(30, TestContext.Current.CancellationToken);
+                if (Changes == before) return;
+            }
+            else
+            {
+                await Task.Delay(10, TestContext.Current.CancellationToken);
+            }
         }
     }
 
