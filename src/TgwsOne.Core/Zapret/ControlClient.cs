@@ -22,12 +22,19 @@ public sealed class ControlClient : IControlClient
 
     private readonly ServicePaths _paths;
     private readonly TimeSpan _timeout;
+    private readonly Func<CancellationToken, Task<Stream>> _connect;
 
     /// <param name="timeout">For the whole exchange (default 5 s).</param>
-    public ControlClient(ServicePaths paths, TimeSpan? timeout = null)
+    public ControlClient(ServicePaths paths, TimeSpan? timeout = null) : this(paths, timeout, null)
+    {
+    }
+
+    /// <param name="connect">How the connection is made; the operating system's own way unless a test says otherwise.</param>
+    internal ControlClient(ServicePaths paths, TimeSpan? timeout, Func<CancellationToken, Task<Stream>>? connect)
     {
         _paths = paths;
         _timeout = timeout ?? TimeSpan.FromSeconds(5);
+        _connect = connect ?? ConnectAsync;
     }
 
     /// <exception cref="ServiceUnavailableException">Nobody is listening, or nothing came back in time.</exception>
@@ -37,7 +44,7 @@ public sealed class ControlClient : IControlClient
         cts.CancelAfter(_timeout);
         try
         {
-            Stream stream = await ConnectAsync(cts.Token);
+            Stream stream = await _connect(cts.Token);
             await using (stream)
             {
                 await ControlIo.WriteLineAsync(stream, ControlProtocol.Serialize(request), cts.Token);
@@ -57,6 +64,12 @@ public sealed class ControlClient : IControlClient
         catch (Exception ex) when (ex is SocketException or IOException)
         {
             throw new ServiceUnavailableException("служба обхода DPI недоступна");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Windows: the pipe is open to interactive logons only (see ControlServer), so a network logon, such as an SSH session,
+            // is refused. That is the boundary working, not a crash: say so in words.
+            throw new ServiceUnavailableException("нет доступа к службе обхода DPI: ею управляют только из своего сеанса на этом компьютере, не по сети");
         }
     }
 
