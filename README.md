@@ -1,124 +1,186 @@
-# TgwsOne — TG WS Proxy + zapret в одном приложении
+# TgwsOne — прокси для Telegram и обход DPI в одном приложении
 
-Одно приложение для Windows: локальный MTProto-прокси для Telegram Desktop (движок
-[TG WS Proxy](https://github.com/Flowseal/tg-ws-proxy)) плюс обход DPI через
-[zapret](https://github.com/bol-van/zapret) — с графическими настройками, треем и
-установщиком MSI.
+Локальный MTProto-прокси для Telegram Desktop (движок [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)) и
+обход DPI на [zapret2](https://github.com/bol-van/zapret2) — с окном, треем и установщиком для **Windows** и **Linux**.
 
 ```
 Telegram Desktop
-      │  MTProto, 127.0.0.1:1443
-      ▼
-┌──────────────────┐        WebSocket / TLS         ┌─────────────────────────┐
-│      TgwsOne     │ ─────────────────────────────► │ дата-центры Telegram    │
-│  окно + трей     │                                │ (kws*.web.telegram.org) │
-│                  │        CF-прокси, HTTP/2       ├─────────────────────────┤
-│  TgWsProxy       │ ─────────────────────────────► │ Cloudflare              │
-└──────────────────┘                                └─────────────────────────┘
-         ▲                                                      ▲
-         │ локально, без прав администратора                    │ zapret (winws):
-         │                                                      │ fake TLS + split,
-    пользователь                                                │ только CF и Telegram
+      │  MTProto, 127.0.0.1:1443                     WebSocket / TLS
+      ▼                                         ┌──────────────────────────┐
+┌──────────────────────────┐ ──────────────────►│ дата-центры Telegram     │
+│ TgwsOne (пользователь)   │                    │ (kws*.web.telegram.org)  │
+│ окно · трей · движок     │   CF-прокси, HTTP/2├──────────────────────────┤
+│ прокси                   │ ──────────────────►│ Cloudflare               │
+└───────────┬──────────────┘                    └──────────────────────────┘
+            │ локальный канал (pipe / Unix-сокет)          ▲
+            ▼                                              │ TLS ClientHello
+┌──────────────────────────┐                               │ обрабатывает zapret2
+│ служба обхода DPI        │  winws2 + WinDivert (Windows) │
+│ SYSTEM / root,           │  nfqws2 + nftables (Linux) ───┘
+│ одна на компьютер        │
+└──────────────────────────┘
 ```
 
-![Главное окно](docs/main.png)
+![Главное окно в Windows](docs/images/windows/04-home.png)
 
-## Что внутри
+Все снимки экрана: [Windows](docs/images/windows/) и [Linux, светлая и тёмная тема](docs/images/linux/).
 
-- **Прокси без прав администратора.** Приложение работает как обычный пользователь,
-  движок слушает `127.0.0.1:1443`, данные пишутся в `%LOCALAPPDATA%\TgwsOne`.
-- **Обход DPI (опционально).** `winws` + WinDivert требуют прав ядра, поэтому установщик один раз
-  создаёт задачу планировщика `TgwsOne-Zapret` (`RunLevel = HighestAvailable`, запуск при входе).
-  Дальше включение обхода — без запросов UAC.
-- **Окно настроек.** Порт и хост, таблица `DC → IP`, CF-прокси и HTTP/2, свои CF/Worker-домены,
-  стратегия zapret, буфер/пул/лог, перегенерация секрета и копирование `tg://`-ссылки.
+## Что умеет
 
-![Настройки](docs/settings.png)
+- **Одна кнопка «Подключить»** запускает прокси и включает обход DPI. Вверху окна — одна фраза о состоянии:
+  «Telegram работает через прокси», «Прокси готов — откройте ссылку в Telegram» или что сломалось.
+- **Обход DPI в режиме «Авто»**: zapret2 сам подбирает для каждого узла одну из четырёх стратегий и переключается,
+  если соединения обрываются. На странице «Обход DPI» видно, какую стратегию «Авто» выбрал для какого узла.
+- **Подбор стратегии**: приложение по очереди пробует стратегии, проверяет TLS до серверов Telegram и скачивание
+  64 КБ через Cloudflare и показывает таблицу с лучшей.
+- **Диагностика с вердиктом**: семь проверок (движок, прокси, подключение Telegram, служба обхода, TCP и TLS до
+  серверов Telegram, Cloudflare) и вывод простыми словами с кнопкой исправления.
+- **Исключения** — сайты и адреса, которых обход не касается, — правит любой пользователь прямо в приложении.
+- **Свои стратегии** на Lua для zapret2 — с проверкой перед сохранением; сохраняет администратор.
+- **Телефон в той же сети**: прокси можно открыть для домашней сети и подключить телефон по QR-коду.
+- **Мастер первого запуска**, автозапуск при входе, значок в трее, уведомления о сбоях, светлая и тёмная тема.
+- **Администратор ставит один раз — пользователь работает без прав администратора**: обходом владеет служба,
+  а приложение управляет ею через локальный канал, без UAC и пароля.
+
+![Обход DPI в Windows: что выбрал «Авто»](docs/images/windows/05-bypass.png)
+
+| Подбор стратегии (Linux) | Тёмная тема (Linux) |
+|---|---|
+| ![Подбор стратегии](docs/images/linux/light-finder-done.png) | ![Тёмная тема](docs/images/linux/dark-home-telegram.png) |
+
+## Как это устроено
+
+- **Прокси** у каждого пользователя свой: движок tg-ws-proxy работает без окна от имени пользователя и слушает
+  `127.0.0.1:1443` (если порт занят — следующий свободный, и приложение просит открыть ссылку заново).
+- **Обход DPI** — один на компьютер: служба (`TgwsOneZapret` в Windows, `tgwsone-zapret` в systemd) запускает
+  winws2 / nfqws2, перезапускает его при сбое и перед применением проверяет каждую стратегию (`--dry-run`).
+  Обход касается только TLS на порт 443 к серверам Telegram и к подсетям Cloudflare.
+- Приложение говорит со службой командами `status`, `on`, `off`, `use`, `strategies`, `exclusions`. Свою стратегию
+  может сохранить только администратор: это код, который выполняется с правами системы.
 
 ## Установка
 
-1. Скачайте `TgwsOne-x.y.z.msi` из [Releases](../../releases).
-2. Запустите, подтвердите UAC один раз. Ставится в `C:\Program Files\TgwsOne`,
-   ярлыки — в меню «Пуск» и на рабочем столе.
-3. Запустите приложение ярлыком → «Запустить» → «Открыть в Telegram».
+### Windows 10 (1809 и новее) и 11, x64
 
-Всё необходимое (движок прокси и zapret) уже внутри MSI — докачивать ничего не нужно.
+1. Администратор запускает `TgwsOne-2.0.0.msi` (тихо: `msiexec /i TgwsOne-2.0.0.msi /qn`). Ставятся программа,
+   служба обхода DPI и правило брандмауэра для подключения телефона (только частная сеть, только своя подсеть).
+2. Пользователь — в том числе без прав администратора — открывает «TgwsOne» из меню «Пуск», проходит мастер
+   из трёх шагов и подтверждает прокси в Telegram («Connect Proxy» / «Подключить прокси»).
 
-Тихая установка: `msiexec /i TgwsOne-x.y.z.msi /qn`.
-Удаление: «Параметры → Приложения» или `msiexec /x TgwsOne-x.y.z.msi /qn` (задача zapret удаляется).
+Обновление с 1.x — тем же MSI поверх: 1.x удаляется, старая задача планировщика и старый `winws` убираются, порт
+и секрет пользователя сохраняются. Удаление: «Параметры → Приложения» или `msiexec /x TgwsOne-2.0.0.msi /qn`.
 
-## Где что лежит
+### Linux x86_64
 
-| Что | Где |
+Архив (нужны `nftables` и `icu`; для сохранения своих стратегий из окна — `polkit`):
+
+```sh
+tar xf tgwsone-2.0.0-linux-x64.tar.gz
+cd tgwsone-2.0.0
+sudo ./install.sh          # в /usr/local, включает службу tgwsone-zapret
+sudo ./uninstall.sh        # удалить; --purge — вместе с /etc/tgwsone, /var/lib/tgwsone и журналами
+```
+
+Arch Linux — пакет `tgwsone-bin`:
+
+```sh
+make engine zapret2 build dist-linux
+cd dist && makepkg -si
+sudo systemctl enable --now tgwsone-zapret
+```
+
+## Обход DPI: стратегии
+
+| Стратегия | Что делает |
 |---|---|
-| Программа, движок, zapret | `C:\Program Files\TgwsOne` |
-| Настройки, списки, логи | `%LOCALAPPDATA%\TgwsOne` |
-| Конфиг и лог прокси | `%LOCALAPPDATA%\TgwsOne\engine\TgWsProxy_data` |
-| Задача обхода DPI | Планировщик заданий → `TgwsOne-Zapret` |
+| **Авто** (по умолчанию) | `circular` из zapret2: для каждого узла начинает с `fake-tls` и после трёх сбоев за минуту переходит к следующей |
+| `fake-tls` | фальшивые ClientHello с неверным номером последовательности, затем `multidisorder` |
+| `split` | `multisplit` с перекрытием (seqovl 681, образец ClientHello google.com) |
+| `split-stealth` | то же с перекрытием 568 и образцом vk.com |
+| `aggressive` | 11 фальшивых ClientHello с `md5sig`, затем `multisplit` |
 
-Портативный режим: если положить `TgwsOne.exe` и `TgWsProxy_windows.exe` в обычную папку
-(не в Program Files), все данные пишутся рядом с программой.
+**Своя стратегия** — файл `<имя>.args` в папке стратегий службы, по одному параметру zapret2 в строке. Разрешены
+`--lua-desync`, `--blob`, `--lua-init`, `--payload`, `--in-range`, `--out-range`; цели и перехват задаёт сама
+служба, поэтому `--filter-*`, `--hostlist*`, `--ipset*`, `--wf-*`, `--qnum` и подобные отклоняются. Из окна:
+«Обход DPI → Свои стратегии → Создать»: «Проверить» запускает `--dry-run`, «Сохранить» просит права администратора.
 
 ## Командная строка
 
-| Ключ | Действие |
+| Ключ | Что делает |
 |---|---|
-| `--tray` | стартовать сразу в трей |
-| `--show` | показать окно запущенного экземпляра |
-| `--start` / `--stop` / `--status` | управление прокси без окна (коды: 0 — ок, 1/2 — нет) |
-| `--selftest` | диагностика в `%LOCALAPPDATA%\TgwsOne\logs\selftest.log` |
-| `--ensure-zapret-task` / `--remove-zapret-task` | создать/удалить задачу обхода (нужен админ) |
-| `--zapret-start` | супервизор winws (запускается задачей) |
+| (без ключей) | окно приложения |
+| `--tray` | подключиться и остаться в трее (так стартует автозапуск) |
+| `--start` / `--stop` / `--status` | прокси без окна (`--status`: код 0 — слушает, 1 — нет) |
+| `--zapret status\|on\|off\|use <стратегия>\|strategies\|exclusions` | обход DPI через службу, без прав администратора |
+| `--selftest` | проверка окружения (код — число проблем) |
+| `--version` | версия |
+| `--service` | служба обхода (её запускают systemd и диспетчер служб Windows) |
+
+## Где что лежит
+
+| | Windows | Linux |
+|---|---|---|
+| Программа | `C:\Program Files\TgwsOne` | `/usr/local/lib/tgwsone` (пакет: `/usr/lib/tgwsone`) |
+| Настройки пользователя | `%LOCALAPPDATA%\TgwsOne\TgwsOne.ini` | `~/.config/tgwsone/tgwsone.ini` |
+| Журналы пользователя | `%LOCALAPPDATA%\TgwsOne\logs` | `~/.local/state/tgwsone/logs` |
+| Служба: состояние и исключения | `C:\ProgramData\TgwsOne` | `/var/lib/tgwsone` |
+| Служба: списки целей и свои стратегии | `C:\ProgramData\TgwsOne\lists`, `…\strategies` | `/etc/tgwsone/lists`, `/etc/tgwsone/strategies` |
+| Журналы службы | `C:\ProgramData\TgwsOne\logs` | `/var/log/tgwsone`, `journalctl -u tgwsone-zapret` |
 
 ## Сборка
 
-Нужны: .NET SDK, WiX 5 (`dotnet tool install --global wix --version 5.*`), исходники движка и zapret.
+Нужны .NET SDK 10, `uv` и `make`; для MSI — Windows с WiX 5.
 
-```powershell
-# 1. upstream-бинарники (в репозитории их нет — лицензии и размер)
-gh release download --repo Flowseal/tg-ws-proxy --pattern TgWsProxy_windows.exe -D _upstream
-gh release download --repo Flowseal/zapret-discord-youtube -D _zapret
-# распаковать архив zapret так, чтобы был _zapret\bin\winws.exe
-
-# 2. сборка MSI
-.\build.ps1 -Engine _upstream\TgWsProxy_windows.exe -ZapretBin _zapret\bin -Version 1.0.3.0
+```sh
+make engine      # движок tg-ws-proxy из исходников закреплённой версии (PyInstaller)
+make zapret2     # zapret2 v1.0.7 с проверкой контрольной суммы
+make build       # приложение для Linux одним файлом → out/publish/linux-x64
+make test        # тесты (в песочнице: настоящий профиль не трогают)
+make dist-linux  # архив и PKGBUILD → dist/
+make build-win   # приложение для Windows → out/publish/win-x64
 ```
 
-`build.ps1` компилирует `src\TgwsOne.cs` (csc из .NET Framework, без внешних зависимостей),
-раскладывает staging и собирает MSI из `installer\TgwsOne.wxs`.
+MSI собирается в Windows: `engine\build-engine.ps1`, затем
+`.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0`
+(подпись — см. [SIGNING.md](SIGNING.md)). CI (`.github/workflows/build.yml`) собирает и тестирует каждый
+pull request в `main`, а по тегу `v*` выпускает релиз с MSI, архивом и PKGBUILD.
 
-## Структура
+## Как проверено
 
-```
-src/TgwsOne.cs              приложение (WinForms, один файл, C# 5)
-src/app.ico                 иконка (10 размеров)
-installer/TgwsOne.template.wxs  шаблон описания MSI (WiX 5)
-build.ps1                   сборка exe + MSI
-.github/workflows/build.yml CI: сборка MSI и релиз по тегу
-```
-
-## Подпись
-
-Сборка умеет подписывать exe и MSI: см. [SIGNING.md](SIGNING.md) (сертификаты, CI-секреты, самоподписанный вариант).
-
-Есть готовая сборка с самоподписанным сертификатом для домена — релиз [selfsigned-1.0.5](../../releases/tag/selfsigned-1.0.5), публичная часть сертификата в [signing/](signing/README.md).
+- Модульные и интерфейсные тесты: больше 1 270 (`make test`), включая проверку интерфейса без экрана.
+- Служба обхода с настоящими nfqws2 и nftables — в отдельных сетевых пространствах Linux: таблица правил
+  включается и выключается, стратегия применяется к ClientHello, «Авто» переключает стратегию после сбоев,
+  исключения применяются без перезапуска, при падении службы трафик не рвётся.
+- Сквозная проверка MTProto: обмен ключами с дата-центром Telegram и ответ на запрос — через прокси, в Linux и
+  в Windows.
+- Windows 10 22H2 без обновлений: установка администратором; работа обычного пользователя без прав
+  (включение, выключение и смена стратегии без UAC); обход на реальном трафике; восстановление службы после
+  принудительного завершения; мастер, трей, автозапуск после перезагрузки и уведомление; удаление;
+  обновление с 1.0.6 с сохранением порта и секрета и обновление 2.0.0 → 2.0.1 при работающем приложении.
 
 ## Ограничения
 
-- Только Windows 10/11 x64.
-- WinDivert (часть zapret) часто определяется антивирусами как RiskTool — добавьте папку
-  установки в исключения.
-- Эффективность обхода DPI зависит от провайдера: перебирайте стратегии
-  (`fake-tls`, `split`, `split-stealth`, `aggressive`) в настройках или в трее.
-  Если не помогает ни одна — нужен туннель (WARP, AmneziaWG и т. п.).
-- MSI не подписан сертификатом: SmartScreen может показать «Неизвестный издатель».
+- Проверялась механика: что обход применяется к нужным соединениям и Telegram отвечает через прокси. Насколько
+  обход помогает против DPI конкретного провайдера, зависит от провайдера; если не помогает ни одна стратегия,
+  нужен туннель (VPN).
+- Через WebSocket-маршрут движка tg-ws-proxy часть новых соединений сбрасывается на втором запросе (поведение
+  самого движка); Telegram при этом переподключается сам.
+- В Windows управлять обходом можно из обычного сеанса на рабочем столе; из сеанса SSH служба команды не принимает.
+- Windows: только x64. WinDivert (часть zapret2) антивирусы часто помечают как RiskTool — добавьте папку
+  установки в исключения. Драйвер WinDivert общий с другими программами обхода, поэтому установщик его не
+  выгружает: после удаления он остаётся загруженным до перезагрузки. Аппаратная защита стека (CET) у процесса
+  выключена намеренно: иначе .NET 10 не запускается на Windows 10 без свежих обновлений.
+- Обновление с 1.x при включённом в 1.x обходе не проверялось.
+- Linux: архив из CI собирается на Ubuntu 22.04; на более старых дистрибутивах движок может не запуститься (glibc).
+- MSI без подписи: SmartScreen может показать «Неизвестный издатель».
 
 ## Благодарности и лицензии
 
 - [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) — движок прокси, MIT
-- [Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) — сборка zapret для Windows, MIT
-- [bol-van/zapret](https://github.com/bol-van/zapret) — оригинальный zapret, MIT
-- [WiX Toolset](https://wixtoolset.org/) — сборка MSI
+- [bol-van/zapret2](https://github.com/bol-van/zapret2) — обход DPI, MIT
+- [WinDivert](https://github.com/basil00/WinDivert) — перехват пакетов в Windows, LGPL-3.0 / GPL-2.0
+- [Avalonia](https://avaloniaui.net/), [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet),
+  [QRCoder](https://github.com/codebude/QRCoder) — MIT
+- [WiX Toolset](https://wixtoolset.org/) — сборка MSI, MS-RL
 
-Код этого репозитория — MIT, см. [LICENSE](LICENSE). Бинарники сторонних проектов
-распространяются на условиях их собственных лицензий.
+Код этого репозитория — MIT, см. [LICENSE](LICENSE). Сторонние компоненты распространяются на условиях своих лицензий.
