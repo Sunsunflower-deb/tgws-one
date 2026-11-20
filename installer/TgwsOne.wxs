@@ -11,14 +11,28 @@
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
 
   <!--
-    Тот же UpgradeCode, что у 1.x: установка 2.0 заменяет 1.x (MajorUpgrade снимает старую версию).
+    Тот же UpgradeCode, что у 1.x: установка 2.0 заменяет 1.x (старая версия снимается RemoveExistingProducts).
     Язык русский, кодовая страница базы 1251: имя службы и правила файрвола написаны по-русски, а в 1252 такие символы
     не помещаются (WIX0311). Сообщения условий запуска остаются английскими.
   -->
   <Package Name="TgwsOne" Manufacturer="TgwsOne" Version="$(var.Version)" Language="1049" Codepage="1251"
            UpgradeCode="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90" Scope="perMachine" Compressed="yes" InstallerVersion="500">
     <SummaryInformation Description="TgwsOne: local MTProto proxy for Telegram and DPI bypass" Manufacturer="TgwsOne" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of TgwsOne is already installed." />
+
+    <!--
+      Обновление с 1.x: тот же UpgradeCode, версия ниже нашей. Не <MajorUpgrade>: он переносит в таблицу Upgrade язык пакета (1049), а
+      MSI тогда ищет старый продукт только среди установленных на русском. 1.x собран на английском (1033), его не находили: FindRelatedProducts
+      молчал, RemoveExistingProducts ничего не делал, и после «обновления» стояли оба продукта (проверка в Windows-ВМ, SP5). Язык здесь не
+      задан вовсе, так что подходит любой.
+    -->
+    <Upgrade Id="8F3C7B1E-5A64-4C2D-9E1F-3D7A6B2C4E90">
+      <UpgradeVersion Property="WIX_DOWNGRADE_DETECTED" Minimum="$(var.Version)" IncludeMinimum="no" OnlyDetect="yes" />
+      <UpgradeVersion Property="WIX_UPGRADE_DETECTED" Maximum="$(var.Version)" IncludeMaximum="no" MigrateFeatures="yes" />
+    </Upgrade>
+    <Launch Condition="NOT WIX_DOWNGRADE_DETECTED" Message="A newer version of TgwsOne is already installed." />
+    <InstallExecuteSequence>
+      <RemoveExistingProducts After="InstallValidate" />
+    </InstallExecuteSequence>
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Icon Id="AppIcon" SourceFile="$(var.IconFile)" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />

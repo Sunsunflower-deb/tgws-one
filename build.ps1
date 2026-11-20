@@ -177,6 +177,10 @@ Invoke-Wix @(
     (Join-Path $root "installer\TgwsOne.wxs"))
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
 
+# Обновление с 1.x держится на таблице Upgrade без языка (см. installer\check-upgrade-table.ps1).
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "installer\check-upgrade-table.ps1") $Out
+if ($LASTEXITCODE -ne 0) { throw "таблица Upgrade в $Out не годится для обновления с 1.x" }
+
 Sign-File $Out
 
 $size = [math]::Round((Get-Item $Out).Length / 1MB, 2)
