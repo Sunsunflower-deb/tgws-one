@@ -47,8 +47,12 @@ internal sealed class BypassRig : IAsyncDisposable
     /// <summary>The page as the user finds it: the monitor has polled and the page has loaded its lists.</summary>
     public async Task OpenAsync()
     {
+        // The monitor polls once by itself when it starts, and that poll may already have run before this rig subscribed to
+        // Changed (on a fast machine) or may still be running (on a loaded one). Waiting for "its poll + ours = 2" therefore
+        // raced it and failed as "the page never took the monitor's snapshots". What matters is that the page has applied a
+        // snapshot before the lists are loaded; the refresh below is one, the monitor's own poll is another at most.
         await Monitor.RefreshNowAsync();
-        await SettleAsync(2);   // the monitor's own poll at start and the one just made
+        await SettleAsync(1);
         await Bypass.LoadCommand.ExecuteAsync(null);
     }
 
@@ -70,7 +74,8 @@ internal sealed class BypassRig : IAsyncDisposable
     /// </summary>
     private async Task SettleAsync(int atLeast)
     {
-        DateTime limit = DateTime.UtcNow.AddSeconds(5);
+        // 15 s, not 5: a loaded CI runner can take seconds to get to a posted snapshot, and a false timeout here is a flaky build.
+        DateTime limit = DateTime.UtcNow.AddSeconds(15);
         while (true)
         {
             if (DateTime.UtcNow > limit) throw new TimeoutException("the page never took the monitor's snapshots");
