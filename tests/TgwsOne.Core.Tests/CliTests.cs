@@ -40,6 +40,71 @@ public class CliTests : IDisposable
 
     private static bool Listening(int port) => PortProbe.CanConnect(IPAddress.Loopback, port, 300);
 
+    /// <summary>The real engine started by hand, <c>tgwsone --engine …</c>, as from a terminal. The caller ends it.</summary>
+    private Process StartEngineByHand(int port)
+    {
+        ProcessStartInfo psi = TgwsOneProcess.StartInfo("--engine", "--host", "127.0.0.1", "--port", port.ToString(),
+            "--secret", Secret, "--dc-ip", "--no-cfproxy", "--pool-size", "0", "--cfproxy-domain", "example.test");
+        foreach (var (k, v) in _env.ChildEnv) psi.Environment[k] = v;
+        return Process.Start(psi)!;
+    }
+
+    [Fact]
+    public void EngineStartedByHand_IsOnRecord_ForStatusAndStop()
+    {
+        // `tgwsone --engine …` from a terminal. No controller starts it, so nothing writes engine.pid for it:
+        // the engine has to put itself on record, or --status does not see it and --stop leaves it running.
+        int port = Configure();
+        using Process engine = StartEngineByHand(port);
+        try
+        {
+            Assert.True(TestEnv.WaitFor(() => PortProbe.IsBusy(IPAddress.Loopback, port)), "the engine did not start listening");
+
+            var status = RunCli("--status");
+            Assert.Equal(0, status.Code);
+            Assert.Contains($"running=true listening=true port={port}", status.Out);
+
+            var start = RunCli("--start");
+            Assert.Equal(0, start.Code);
+            Assert.Contains($"уже запущен (порт {port})", start.Out);
+
+            var stop = RunCli("--stop");
+            Assert.Equal(0, stop.Code);
+            Assert.Contains("остановлен", stop.Out);
+            Assert.True(TestEnv.WaitFor(() => !Listening(port)), "port still listening after --stop");
+            Assert.True(TestEnv.WaitFor(() => engine.HasExited), "the engine process outlived --stop");
+        }
+        finally
+        {
+            // Whatever the assertions found, the engine must not outlive the test.
+            if (!engine.HasExited) engine.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
+    public void EngineStartedByHand_NextToARegisteredOne_DoesNotTakeItsPlace()
+    {
+        // The controller has one engine on record. A second, started by hand, must not write its own record over it:
+        // --stop has to keep reaching the engine the controller started.
+        int port = Configure();
+        Assert.Equal(0, RunCli("--start").Code);
+        int handPort = TestEnv.FreePort();
+        using Process hand = StartEngineByHand(handPort);
+        try
+        {
+            Assert.True(TestEnv.WaitFor(() => PortProbe.IsBusy(IPAddress.Loopback, handPort)), "the hand-started engine did not start");
+
+            var stop = RunCli("--stop");
+
+            Assert.Contains("остановлен", stop.Out);
+            Assert.True(TestEnv.WaitFor(() => !TestEnv.FakeEngines().Any()), "--stop did not reach the engine on record");
+        }
+        finally
+        {
+            if (!hand.HasExited) hand.Kill(entireProcessTree: true);
+        }
+    }
+
     [Fact]
     public void Cli_StartExits_EngineKeepsListening_StopFromAnotherProcess()
     {

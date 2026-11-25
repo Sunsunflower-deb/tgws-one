@@ -1,4 +1,7 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using TgwsOne.Core;
 using TgwsOne.Engine;
 using TgwsOne.Engine.Relay;
 
@@ -52,6 +55,8 @@ internal static class EngineCli
                 return 1;
             }
 
+            PutOnRecord(args);
+
             await stopped.Task.WaitAsync(stop.Token).ConfigureAwait(false);
             return 0;
         }
@@ -62,6 +67,29 @@ internal static class EngineCli
         finally
         {
             Console.CancelKeyPress -= onCancel;
+        }
+    }
+
+    /// <summary>
+    /// Writes this process to <c>engine.pid</c>, where <c>--status</c>, <c>--stop</c> and the window look for a
+    /// detached engine. Started by the application, it has written the same record itself; started by hand, this is
+    /// the only thing that puts the engine on record. A live record of another engine is left alone: a second engine
+    /// started by hand must not hide the one the controller knows about. The record outlives the process; its reader
+    /// checks that the process is alive before believing it.
+    /// </summary>
+    private static void PutOnRecord(string[] args)
+    {
+        try
+        {
+            AppPaths paths = AppPaths.Current;
+            if (EngineRecord.Read(paths.PidFile) is { } other && other.Pid != Environment.ProcessId && other.IsAlive()) return;
+            using Process self = Process.GetCurrentProcess();
+            EngineRecord.ForProcess(self, Environment.ProcessPath ?? paths.Engine, EngineCommand.Hash(args)).Write(paths.PidFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                                       or Win32Exception)
+        {
+            // The proxy works without the record; it is only the CLI that cannot see it.
         }
     }
 
