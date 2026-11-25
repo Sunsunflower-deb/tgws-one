@@ -76,10 +76,9 @@ public static class Obfuscated2
     /// </summary>
     public static byte[] GenerateRelayInit(uint protoTag, int dcIdx)
     {
-        byte[] random;
         while (true)
         {
-            random = new byte[MtProtoConstants.HandshakeLength];
+            byte[] random = new byte[MtProtoConstants.HandshakeLength];
             RandomNumberGenerator.Fill(random);
             if (random[0] == 0xEF) continue;
             if (MtProtoConstants.IsKnownTag(random.AsSpan(0, 4))) continue;
@@ -88,24 +87,32 @@ public static class Obfuscated2
                 || random.AsSpan(0, 4).SequenceEqual(new byte[] { 0x16, 0x03, 0x01, 0x02 }))
                 continue;
             if (random[4] == 0 && random[5] == 0 && random[6] == 0 && random[7] == 0) continue;
-            break;
+            return SealRelayInit(random, protoTag, (short)dcIdx);
         }
+    }
 
-        byte[] encKey = random.AsSpan(MtProtoConstants.SkipLength, MtProtoConstants.PrekeyLength).ToArray();
-        byte[] encIv = random.AsSpan(MtProtoConstants.SkipLength + MtProtoConstants.PrekeyLength, MtProtoConstants.IvLength).ToArray();
-
+    /// <summary>
+    /// The 64 random bytes with the protocol tag and the signed DC number sealed into their tail: Telegram decrypts
+    /// the tail with the key the bytes themselves name and reads the tag and the DC from it. The two bytes after the
+    /// DC are padding; they are the buffer's own last two bytes, which the sealed tail replaces anyway.
+    /// </summary>
+    internal static byte[] SealRelayInit(ReadOnlySpan<byte> random, uint protoTag, short dcIdx)
+    {
         Span<byte> tailPlain = stackalloc byte[8];
         BinaryPrimitives.WriteUInt32LittleEndian(tailPlain, protoTag);
-        BinaryPrimitives.WriteInt16LittleEndian(tailPlain[4..], (short)dcIdx);
-        RandomNumberGenerator.Fill(tailPlain[6..8]);
+        BinaryPrimitives.WriteInt16LittleEndian(tailPlain[4..], dcIdx);
+        random.Slice(MtProtoConstants.ProtoTagPosition + 6, 2).CopyTo(tailPlain[6..8]);
 
-        using var ctr = new AesCtr(encKey, encIv);
+        using var ctr = new AesCtr(random.Slice(MtProtoConstants.SkipLength, MtProtoConstants.PrekeyLength),
+            random.Slice(MtProtoConstants.SkipLength + MtProtoConstants.PrekeyLength, MtProtoConstants.IvLength));
         byte[] encryptedFull = ctr.Transform(random);
 
+        byte[] relayInit = random.ToArray();
         for (int i = 0; i < 8; i++)
-            random[MtProtoConstants.ProtoTagPosition + i] = (byte)(tailPlain[i] ^ encryptedFull[MtProtoConstants.ProtoTagPosition + i] ^ random[MtProtoConstants.ProtoTagPosition + i]);
+            relayInit[MtProtoConstants.ProtoTagPosition + i] =
+                (byte)(tailPlain[i] ^ encryptedFull[MtProtoConstants.ProtoTagPosition + i] ^ random[MtProtoConstants.ProtoTagPosition + i]);
 
-        return random;
+        return relayInit;
     }
 
     /// <summary>Verifies the tail of a relay init the way Telegram will: decrypt it with the key it names.</summary>
