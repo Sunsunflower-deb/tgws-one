@@ -133,6 +133,32 @@ public class EngineConfigParserTests
         Assert.NotNull(EngineConfigParser.TryParse(["--secret", Secret, arg], out _));
     }
 
+    [Theory]
+    [InlineData("--host", "localhost")]     // a name is not an address: the engine has nothing to bind to
+    [InlineData("--host", "127.0.0.1:1443")]
+    [InlineData("--host", "")]
+    [InlineData("--port", "0")]
+    [InlineData("--port", "65536")]
+    [InlineData("--port", "-1")]
+    public void AHostThatIsNotAnAddress_AndAPortThatIsNotOne_AreRejectedByTheParser(string flag, string value)
+    {
+        // Rejected here, with the other argument errors; otherwise the engine starts and dies with a library message.
+        Assert.NotNull(EngineConfigParser.TryParse(["--secret", Secret, flag, value], out _));
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1")]
+    [InlineData("0.0.0.0")]
+    [InlineData("::1")]
+    public void AnyIpAddress_IsAHost(string host)
+        => Assert.Equal(host, Parse("--secret", Secret, "--host", host).Host);
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("65535")]
+    public void BothEndsOfThePortRange_AreAccepted(string port)
+        => Assert.Equal(int.Parse(port), Parse("--secret", Secret, "--port", port).Port);
+
     [Fact]
     public void Help_IsRecognised()
     {

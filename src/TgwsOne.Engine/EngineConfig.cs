@@ -166,6 +166,9 @@ public static class EngineConfigParser
                 {
                     string? v = Next();
                     if (v is null) return "после --host нужен адрес";
+                    // The listener is bound to an address, not a name: caught here, and not as a library
+                    // message when the engine is already starting.
+                    if (!IPAddress.TryParse(v, out _)) return $"--host ждёт IP-адрес, например 127.0.0.1 или 0.0.0.0 (получилось «{v}»)";
                     host = v;
                     break;
                 }
@@ -174,6 +177,7 @@ public static class EngineConfigParser
                     string? v = Next();
                     if (v is null || !int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out port))
                         return "после --port нужно число";
+                    if (port is < 1 or > 65535) return $"--port должен быть от 1 до 65535 (получилось {port})";
                     break;
                 }
                 case "--secret":

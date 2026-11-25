@@ -221,10 +221,11 @@ public sealed class WebSocketPool : IAsyncDisposable
                 if (idle < _config.PoolSize) ScheduleRefill(key, targetIp, domains);
 
                 double wake = now + CheckIntervalSeconds;
-                if (idle > 0 && _buckets.TryGetValue(key, out Bucket? b))
+                if (idle > 0)
                 {
+                    // The bucket itself, not the dictionary: that one changes under the lock from the client side.
                     double oldest;
-                    lock (_gate) oldest = b.Idle.Count == 0 ? wake : b.Idle.Min(e => e.Created);
+                    lock (_gate) oldest = bucket.Idle.Count == 0 ? wake : bucket.Idle.Min(e => e.Created);
                     wake = Math.Min(wake, oldest + MaxAgeSeconds);
                 }
                 if (retryAt > now) wake = Math.Min(wake, retryAt);
