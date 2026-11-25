@@ -9,11 +9,21 @@ namespace TgwsOne.Engine.Crypto;
 /// </summary>
 public sealed class AesCtr : IDisposable
 {
+    private const int BlockSize = 16;
+
+    // One AES call per 16-byte block made the relay spend most of its time getting in and out of the crypto library
+    // (into OpenSSL on Linux) rather than in AES itself. The keystream is now made in batches of blocks, one call
+    // each; never more than this many, and only as many as the read at hand still needs, so that the small MTProto
+    // packets that make up most of the traffic do not pay for a whole batch.
+    private const int MaxBatchBlocks = 256;
+
     private readonly Aes _aes;
     private readonly ICryptoTransform _ecb;
-    private readonly byte[] _counter = new byte[16];
-    private readonly byte[] _keystream = new byte[16];
-    private int _used = 16;
+    private readonly byte[] _counter = new byte[BlockSize];
+    private readonly byte[] _blocks = new byte[MaxBatchBlocks * BlockSize];
+    private readonly byte[] _keystream = new byte[MaxBatchBlocks * BlockSize];
+    private int _keystreamLength;   // how much of the keystream buffer holds the current batch
+    private int _used;              // and how much of that batch was handed out already
 
     public AesCtr(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)
     {
@@ -44,14 +54,11 @@ public sealed class AesCtr : IDisposable
         int i = 0;
         while (i < input.Length)
         {
-            if (_used == 16)
-            {
-                _ecb.TransformBlock(_counter, 0, 16, _keystream, 0);
-                IncrementCounter();
-                _used = 0;
-            }
-            int count = Math.Min(16 - _used, input.Length - i);
-            for (int j = 0; j < count; j++) output[i + j] = (byte)(input[i + j] ^ _keystream[_used + j]);
+            if (_used == _keystreamLength)
+                Refill(Math.Min(MaxBatchBlocks, (input.Length - i + BlockSize - 1) / BlockSize));
+            int count = Math.Min(_keystreamLength - _used, input.Length - i);
+            input.Slice(i, count).CopyTo(output.Slice(i, count));
+            for (int j = 0; j < count; j++) output[i + j] ^= _keystream[_used + j];
             _used += count;
             i += count;
         }
@@ -62,23 +69,19 @@ public sealed class AesCtr : IDisposable
     {
         if (bytes <= 0) return;
 
-        // Consume what is left of the current keystream block first, if the stream is mid-block.
-        if (_used != 16)
+        // What the buffer still holds is keystream for counter values the counter has already gone past, so dropping
+        // it takes no arithmetic. The whole blocks after that are counter increments; a partial block needs keystream.
+        int available = _keystreamLength - _used;
+        if (bytes <= available)
         {
-            int available = 16 - _used;
-            if (bytes <= available)
-            {
-                _used += bytes;
-                return;
-            }
-            bytes -= available;
-            _used = 16;
+            _used += bytes;
+            return;
         }
+        bytes -= available;
+        _used = _keystreamLength = 0;
 
-        int whole = bytes / 16;
-        int rest = bytes % 16;
-        // Whole blocks are just counter arithmetic; only a partial block needs a keystream block.
-        for (int i = 0; i < whole; i++) IncrementCounter();
+        for (int i = bytes / BlockSize; i > 0; i--) IncrementCounter();
+        int rest = bytes % BlockSize;
         if (rest == 0) return;
         Span<byte> zeros = stackalloc byte[rest];
         Span<byte> scratch = stackalloc byte[rest];
@@ -92,9 +95,23 @@ public sealed class AesCtr : IDisposable
         _aes.Dispose();
     }
 
+    /// <summary>Encrypts the next <paramref name="blocks"/> counter values into the keystream buffer, a fresh batch.</summary>
+    private void Refill(int blocks)
+    {
+        int length = blocks * BlockSize;
+        for (int offset = 0; offset < length; offset += BlockSize)
+        {
+            _counter.CopyTo(_blocks, offset);
+            IncrementCounter();
+        }
+        _ecb.TransformBlock(_blocks, 0, length, _keystream, 0);
+        _keystreamLength = length;
+        _used = 0;
+    }
+
     private void IncrementCounter()
     {
-        for (int i = 15; i >= 0; i--)
+        for (int i = BlockSize - 1; i >= 0; i--)
         {
             if (++_counter[i] != 0) break;
         }
