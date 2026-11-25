@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>TgwsOne.Engine</RootNamespace>
+    <AssemblyName>TgwsOne.Engine</AssemblyName>
+    <!-- The proxy engine is a library: the application hosts it in its own process (and the engine command line
+         runs the same code headlessly). No UI or Avalonia references, so the CLI paths stay light. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TgwsOne.Engine.Tests" />
+    <InternalsVisibleTo Include="TgwsOne.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TgwsOne.Core\TgwsOne.Core.csproj" />
+  </ItemGroup>
+
+</Project>

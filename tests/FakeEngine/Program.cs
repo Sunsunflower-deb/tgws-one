@@ -37,7 +37,7 @@ if (mode == "nolisten")
 
 if (mode == "child")
 {
-    // The PyInstaller one-file bootloader runs the real interpreter as a child; imitate that.
+    // An older PyInstaller one-file engine ran the real interpreter as a child; tests still emulate that shape.
     var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
     psi.Environment["FAKE_MODE"] = "nolisten";
     psi.Environment.Remove("FAKE_ARGS_FILE");   // the child must not overwrite our argv dump

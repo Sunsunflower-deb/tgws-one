@@ -4,7 +4,8 @@
   -d Version=… -d StageDir=… -d IconFile=…). Служба Windows ставится самим MSI (ServiceInstall), пользовательских действий
   (CustomAction) нет: всё, что нужно службе при первом запуске, она делает сама.
 
-  $(var.StageDir) — разложенное дерево: TgwsOne.exe, tgws-engine.exe, родные библиотеки интерфейса, zapret2\, lists\.
+  $(var.StageDir) — разложенное дерево: TgwsOne.exe (движок прокси внутри этого же файла), родные библиотеки
+  интерфейса, zapret2\, lists\.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
@@ -57,7 +58,6 @@
       папке; 1.x-шный winws из старой папки закрывает сама служба (LegacyMigration), а winws2 — служба же.
     -->
     <util:CloseApplication Id="CloseTgwsOne" Target="TgwsOne.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
-    <util:CloseApplication Id="CloseTgwsEngine" Target="tgws-engine.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
     <util:CloseApplication Id="CloseOldProxy" Target="TgWsProxy_windows.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" Timeout="1000" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -71,16 +71,14 @@
     <Feature Id="Main" Title="TgwsOne" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="cmp_app" />
-      <ComponentRef Id="cmp_engine" />
       <ComponentRef Id="cmp_shortcut" />
       <ComponentRef Id="cmp_desktop" />
     </Feature>
 
-    <!-- Всё дерево, кроме двух исполняемых файлов, у которых свои компоненты (служба и правило файрвола садятся на них). -->
+    <!-- Всё дерево, кроме главного исполняемого файла, у которого свой компонент (служба и правило файрвола садятся на него). -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLDIR">
       <Files Include="$(var.StageDir)\**">
         <Exclude Files="$(var.StageDir)\TgwsOne.exe" />
-        <Exclude Files="$(var.StageDir)\tgws-engine.exe" />
       </Files>
     </ComponentGroup>
 
@@ -98,6 +96,9 @@
                             ResetPeriodInDays="1" RestartServiceDelayInSeconds="5" />
       </ServiceInstall>
       <ServiceControl Id="ctl_TgwsOneZapret" Name="TgwsOneZapret" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      <!-- Прокси для телефона: входящие TCP-соединения к приложению только из своей подсети и только в частной сети. -->
+      <fw:FirewallException Id="fw_TgwsProxy" Name="TgwsOne: прокси для телефона" File="fil_TgwsOne"
+                            Protocol="tcp" Scope="localSubnet" Profile="private" IgnoreFailure="yes" />
       <!--
         Драйвер WinDivert здесь НЕ останавливаем и не удаляем. Он ставится сам при первом запуске winws2 и после выхода остаётся
         загруженным, но служба с этим именем общая: ею пользуются и чужие программы (GoodbyeDPI, другие сборки zapret). Проверка в
@@ -105,13 +106,6 @@
         пока не закроются чужие дескрипторы; а без остановки обновление 2.x -> 2.y идёт без перезагрузки (WinDivert64.sys заменяется при
         загруженном драйвере), и после удаления драйвер просто доживает в памяти до перезагрузки.
       -->
-    </Component>
-
-    <!-- Прокси для телефона: входящие TCP-соединения к движку только из своей подсети и только в частной сети. -->
-    <Component Id="cmp_engine" Directory="INSTALLDIR">
-      <File Id="fil_TgwsEngine" Source="$(var.StageDir)\tgws-engine.exe" KeyPath="yes" />
-      <fw:FirewallException Id="fw_TgwsEngine" Name="TgwsOne: прокси для телефона" File="fil_TgwsEngine"
-                            Protocol="tcp" Scope="localSubnet" Profile="private" IgnoreFailure="yes" />
     </Component>
 
     <Component Id="cmp_shortcut" Directory="DIR_MENU">

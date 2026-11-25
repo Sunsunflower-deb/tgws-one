@@ -29,7 +29,7 @@ certutil -addstore -f "TrustedPublisher" TgwsOne-CodeSigning.cer
 ## Подписать релиз этим сертификатом
 
 ```powershell
-.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0 `
+.\build.ps1 -AppDir out\publish\win-x64 -Version 2.0.0.0 `
   -Out dist\TgwsOne-2.0.0-selfsigned.msi `
   -Pfx signing\TgwsOne-CodeSigning.pfx -PfxPassword "<пароль>"
 ```

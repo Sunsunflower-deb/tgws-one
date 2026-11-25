@@ -11,14 +11,14 @@ pkgdesc='Local Telegram proxy with DPI bypass (zapret2): desktop app, bypass ser
 arch=(x86_64)
 url='https://github.com/Sunsunflower-deb/tgws-one'
 license=(MIT)
-# glibc, gcc-libs: the .NET app and the engine; icu: the app uses IdnMapping and loads ICU at run time; zlib: the engine (PyInstaller);
+# glibc, gcc-libs: the .NET app (the proxy engine is inside it); icu: the app uses IdnMapping and loads ICU at run time;
 # fontconfig, freetype2: Skia, the UI's renderer; the lib* ones are what Avalonia's X11 backend opens; nftables: the bypass service.
-depends=(glibc gcc-libs icu zlib fontconfig freetype2 nftables
+depends=(glibc gcc-libs icu fontconfig freetype2 nftables
          libx11 libxext libxfixes libxi libxrandr libxcursor libice libsm)
 optdepends=('polkit: сохранение своих стратегий из интерфейса')
 provides=(tgwsone)
 conflicts=(tgwsone)
-# The .NET single-file app and the PyInstaller engine carry their payload inside the file; stripping would corrupt them.
+# The .NET single-file app carries its payload inside the file; stripping would corrupt it.
 options=(!strip !debug)
 install=tgwsone-bin.install
 # From a release, instead of the local file:
@@ -31,4 +31,5 @@ package() {
   # The same layout script as `make install` and the tarball's install.sh.
   packaging/linux/install-tree.sh "$pkgdir" /usr .
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 UPSTREAM-LICENSE "$pkgdir/usr/share/licenses/$pkgname/UPSTREAM-LICENSE"
 }

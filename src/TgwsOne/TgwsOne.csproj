@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TgwsOne.Core\TgwsOne.Core.csproj" />
+    <ProjectReference Include="..\TgwsOne.Engine\TgwsOne.Engine.csproj" />
   </ItemGroup>
 
   <ItemGroup>

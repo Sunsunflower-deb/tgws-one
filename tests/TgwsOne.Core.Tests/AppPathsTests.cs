@@ -15,7 +15,7 @@ public class AppPathsTests
             @"C:\Program Files\TgwsOne\", @"C:\Users\u");
 
         Assert.Equal(@"C:\Program Files\TgwsOne", p.AppDir);
-        Assert.Equal(@"C:\Program Files\TgwsOne\tgws-engine.exe", p.Engine);
+        Assert.Equal(@"C:\Program Files\TgwsOne\TgwsOne.exe", p.Engine);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne", p.DataDir);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\TgwsOne.ini", p.Ini);
         Assert.Equal(@"C:\Users\u\AppData\Local\TgwsOne\lists", p.ListsDir);
@@ -34,7 +34,7 @@ public class AppPathsTests
         var p = AppPaths.For(OsKind.Linux, Env(), "/opt/tgwsone/", "/home/u");
 
         Assert.Equal("/opt/tgwsone", p.AppDir);
-        Assert.Equal(Path.Join("/opt/tgwsone", "tgws-engine"), p.Engine);
+        Assert.Equal(Path.Join("/opt/tgwsone", "tgwsone"), p.Engine);
         Assert.Equal(Path.Join("/home/u", ".config", "tgwsone"), p.DataDir);
         Assert.Equal(Path.Join("/home/u", ".config", "tgwsone", "tgwsone.ini"), p.Ini);
         Assert.Equal(Path.Join("/home/u", ".config", "tgwsone", "lists"), p.ListsDir);
@@ -73,8 +73,8 @@ public class AppPathsTests
     }
 
     [Theory]
-    [InlineData(OsKind.Windows, @"D:\t\x", '\\', "TgwsOne.ini", "tgws-engine.exe")]
-    [InlineData(OsKind.Linux, "/tmp/x", '/', "tgwsone.ini", "tgws-engine")]
+    [InlineData(OsKind.Windows, @"D:\t\x", '\\', "TgwsOne.ini", "TgwsOne.exe")]
+    [InlineData(OsKind.Linux, "/tmp/x", '/', "tgwsone.ini", "tgwsone")]
     public void DataDirOverride_PutsEverythingUnderOneDir(OsKind os, string dir, char sep, string iniName, string engineName)
     {
         var p = AppPaths.For(os, Env(("TGWS_DATA_DIR", dir), ("XDG_RUNTIME_DIR", "/x/run"), ("LOCALAPPDATA", @"C:\L")),

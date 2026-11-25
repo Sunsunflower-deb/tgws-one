@@ -1,6 +1,6 @@
 # TgwsOne — прокси для Telegram и обход DPI в одном приложении
 
-Локальный MTProto-прокси для Telegram Desktop (движок [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)) и
+Локальный MTProto-прокси для Telegram Desktop (нативный движок на C# по мотивам [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)) и
 обход DPI на [zapret2](https://github.com/bol-van/zapret2) — с окном, треем и установщиком для **Windows** и **Linux**.
 
 ```
@@ -9,7 +9,7 @@ Telegram Desktop
       ▼                                         ┌──────────────────────────┐
 ┌──────────────────────────┐ ──────────────────►│ дата-центры Telegram     │
 │ TgwsOne (пользователь)   │                    │ (kws*.web.telegram.org)  │
-│ окно · трей · движок     │   CF-прокси, HTTP/2├──────────────────────────┤
+│ окно · трей · движок C#  │   CF-прокси, HTTP/2├──────────────────────────┤
 │ прокси                   │ ──────────────────►│ Cloudflare               │
 └───────────┬──────────────┘                    └──────────────────────────┘
             │ локальный канал (pipe / Unix-сокет)          ▲
@@ -52,8 +52,8 @@ Telegram Desktop
 
 ## Как это устроено
 
-- **Прокси** у каждого пользователя свой: движок tg-ws-proxy работает без окна от имени пользователя и слушает
-  `127.0.0.1:1443` (если порт занят — следующий свободный, и приложение просит открыть ссылку заново).
+- **Прокси** у каждого пользователя свой: движок MTProto-over-WebSocket встроен в приложение, работает от имени
+  пользователя и слушает `127.0.0.1:1443` (если порт занят — следующий свободный, и приложение просит открыть ссылку заново).
 - **Обход DPI** — один на компьютер: служба (`TgwsOneZapret` в Windows, `tgwsone-zapret` в systemd) запускает
   winws2 / nfqws2, перезапускает его при сбое и перед применением проверяет каждую стратегию (`--dry-run`).
   Обход касается только TLS на порт 443 к серверам Telegram и к подсетям Cloudflare.
@@ -86,7 +86,7 @@ sudo ./uninstall.sh        # удалить; --purge — вместе с /etc/tg
 Arch Linux — пакет `tgwsone-bin`:
 
 ```sh
-make engine zapret2 build dist-linux
+make zapret2 build dist-linux
 cd dist && makepkg -si
 sudo systemctl enable --now tgwsone-zapret
 ```
@@ -117,6 +117,7 @@ sudo systemctl enable --now tgwsone-zapret
 | `--selftest` | проверка окружения (код — число проблем) |
 | `--version` | версия |
 | `--service` | служба обхода (её запускают systemd и диспетчер служб Windows) |
+| `--engine …` | движок прокси без окна (так `--start` поднимает его, когда приложение не запущено); ключи — как у tg-ws-proxy |
 
 ## Где что лежит
 
@@ -131,25 +132,29 @@ sudo systemctl enable --now tgwsone-zapret
 
 ## Сборка
 
-Нужны .NET SDK 10, `uv` и `make`; для MSI — Windows с WiX 5.
+Нужны .NET SDK 10 и `make`; для MSI — Windows с WiX 5.
 
 ```sh
-make engine      # движок tg-ws-proxy из исходников закреплённой версии (PyInstaller)
 make zapret2     # zapret2 v1.0.7 с проверкой контрольной суммы
 make build       # приложение для Linux одним файлом → out/publish/linux-x64
 make test        # тесты (в песочнице: настоящий профиль не трогают)
+make test-network  # по желанию: реальный обмен с Telegram через WS-пул и Cloudflare
 make dist-linux  # архив и PKGBUILD → dist/
 make build-win   # приложение для Windows → out/publish/win-x64
 ```
 
-MSI собирается в Windows: `engine\build-engine.ps1`, затем
-`.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0`
+MSI собирается в Windows:
+`.\build.ps1 -AppDir out\publish\win-x64 -Version 2.0.0.0`
 (подпись — см. [SIGNING.md](SIGNING.md)). CI (`.github/workflows/build.yml`) собирает и тестирует каждый
 pull request в `main`, а по тегу `v*` выпускает релиз с MSI, архивом и PKGBUILD.
 
 ## Как проверено
 
-- Модульные и интерфейсные тесты: больше 1 270 (`make test`), включая проверку интерфейса без экрана.
+- Модульные и интерфейсные тесты (`make test`), включая проверку интерфейса без экрана и тесты нативного движка
+  (`tests/TgwsOne.Engine.Tests`: криптография, WebSocket, разбор пакетов, сквозной обмен через запасной TCP-путь).
+- Нативный движок проверен на реальном Telegram: WS-пул и маршрут через Cloudflare доводят `req_pq_multi` до
+  `resPQ` (`make test-network`); сами дата-центры и TLS к маскировочным доменам зависят от сети. Аргументы
+  командной строки проверяются на настоящем `tgwsone --engine` (`make test-engine`, нужен `make build`).
 - Служба обхода с настоящими nfqws2 и nftables — в отдельных сетевых пространствах Linux: таблица правил
   включается и выключается, стратегия применяется к ClientHello, «Авто» переключает стратегию после сбоев,
   исключения применяются без перезапуска, при падении службы трафик не рвётся.
@@ -173,12 +178,13 @@ pull request в `main`, а по тегу `v*` выпускает релиз с M
   выгружает: после удаления он остаётся загруженным до перезагрузки. Аппаратная защита стека (CET) у процесса
   выключена намеренно: иначе .NET 10 не запускается на Windows 10 без свежих обновлений.
 - Обновление с 1.x при включённом в 1.x обходе не проверялось.
-- Linux: архив из CI собирается на Ubuntu 22.04; на более старых дистрибутивах движок может не запуститься (glibc).
+- Linux: архив из CI собирается на Ubuntu 22.04; на более старых дистрибутивах приложение может не запуститься (glibc).
 - MSI без подписи: SmartScreen может показать «Неизвестный издатель».
 
 ## Благодарности и лицензии
 
-- [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) — движок прокси, MIT
+- [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) — движок прокси, MIT; его логика MTProto-over-WebSocket
+  перенесена на C# (`src/TgwsOne.Engine`), оригинал и версия указаны в `src/TgwsOne.Engine/UPSTREAM.md`
 - [bol-van/zapret2](https://github.com/bol-van/zapret2) — обход DPI, MIT
 - [WinDivert](https://github.com/basil00/WinDivert) — перехват пакетов в Windows, LGPL-3.0 / GPL-2.0
 - [Avalonia](https://avaloniaui.net/), [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet),

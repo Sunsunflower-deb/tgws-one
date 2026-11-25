@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/TgwsOne.Core/TgwsOne.Core.csproj" />
+    <Project Path="src/TgwsOne.Engine/TgwsOne.Engine.csproj" />
     <Project Path="src/TgwsOne/TgwsOne.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -8,5 +9,6 @@
     <Project Path="tests/FakeZapret/FakeZapret.csproj" />
     <Project Path="tests/TgwsOne.App.Tests/TgwsOne.App.Tests.csproj" />
     <Project Path="tests/TgwsOne.Core.Tests/TgwsOne.Core.Tests.csproj" />
+    <Project Path="tests/TgwsOne.Engine.Tests/TgwsOne.Engine.Tests.csproj" />
   </Folder>
 </Solution>

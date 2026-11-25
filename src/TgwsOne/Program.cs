@@ -81,6 +81,11 @@ internal static class Program
 
     private static async Task<int> RunCliAsync(string[] args)
     {
+        // The headless proxy: explicitly with --engine, or with the engine's own argv (what ProxyController
+        // records and what an existing installation's scripts may still pass).
+        if (args[0] == "--engine" || IsEngineArgv(args))
+            return await EngineCli.RunAsync(args[0] == "--engine" ? args[1..] : args);
+
         if (args[0] == "--zapret")
             return await ZapretCli.RunAsync(args[1..], ServicePaths.Current, Console.Out, Console.Error);
 
@@ -107,6 +112,10 @@ internal static class Program
                 return ExitUsage;
         }
     }
+
+    // EngineCommand always puts --host first, so this is what the process fallback and old scripts pass. A bare
+    // `-v` must stay the application's (an error), not silently start an engine.
+    private static bool IsEngineArgv(string[] args) => args is ["--host", ..];
 
     private static ProxyController NewController(AppPaths paths) => new(paths, new AppLog(paths.AppLogFile));
 

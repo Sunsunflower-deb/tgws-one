@@ -15,12 +15,12 @@ internal interface IProxyControl
     bool RestartNeeded();
 }
 
-internal sealed class ProxyControl(ProxyController controller) : IProxyControl
+internal sealed class ProxyControl(IProxyEngineControl engine) : IProxyControl
 {
-    public Task<StartResult> StartAsync(CancellationToken ct = default) => controller.StartAsync(ct);
-    public Task<StopOutcome> StopAsync(CancellationToken ct = default) => controller.StopAsync(ct);
-    public ProxyStatus GetStatus() => controller.GetStatus();
-    public bool RestartNeeded() => controller.RestartNeeded();
+    public Task<StartResult> StartAsync(CancellationToken ct = default) => engine.StartAsync(ct);
+    public Task<StopOutcome> StopAsync(CancellationToken ct = default) => engine.StopAsync(ct);
+    public ProxyStatus GetStatus() => engine.GetStatus();
+    public bool RestartNeeded() => engine.RestartNeeded();
 }
 
 /// <summary>One row of the machine's TCP table.</summary>

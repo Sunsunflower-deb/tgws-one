@@ -21,8 +21,8 @@ env:
 jobs:
   linux:
     name: Linux (tarball, PKGBUILD)
-    # The oldest runner image that is still supported: the self-contained .NET app and the PyInstaller engine link against the
-    # build machine's glibc, so a tarball built on a newer system would not start on an older one.
+    # The oldest runner image that is still supported: the self-contained .NET app links against the build machine's
+    # glibc, so a tarball built on a newer system would not start on an older one.
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -31,8 +31,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - uses: astral-sh/setup-uv@v6
 
       # The headless UI tests draw with Skia, which needs fontconfig.
       - name: System libraries
@@ -47,8 +45,8 @@ jobs:
             exit 1
           fi
 
-      - name: Engine and zapret2
-        run: make engine zapret2
+      - name: zapret2
+        run: make zapret2
 
       - name: Build and test
         run: make build test
@@ -83,8 +81,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - uses: astral-sh/setup-uv@v6
-
       - name: Version
         shell: pwsh
         env:
@@ -114,10 +110,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "wix extension add (Util) failed" }
           wix extension add -g WixToolset.Firewall.wixext/5.0.2
           if ($LASTEXITCODE -ne 0) { throw "wix extension add (Firewall) failed" }
-
-      - name: Engine
-        shell: pwsh
-        run: ./engine/build-engine.ps1
 
       - name: zapret2
         shell: pwsh
@@ -190,7 +182,7 @@ jobs:
               if ($body) { $notes = $body }
             }
           }
-          $footer = "---`nWindows: установщик TgwsOne-$ver.msi — внутри приложение, движок прокси, zapret2 и списки, ничего дополнительно скачивать не нужно.`nLinux: архив tgwsone-$ver-linux-x64.tar.gz (внутри install.sh) или пакет для Arch Linux — PKGBUILD tgwsone-bin."
+          $footer = "---`nWindows: установщик TgwsOne-$ver.msi — внутри приложение (движок прокси встроен), zapret2 и списки, ничего дополнительно скачивать не нужно.`nLinux: архив tgwsone-$ver-linux-x64.tar.gz (внутри install.sh) или пакет для Arch Linux — PKGBUILD tgwsone-bin."
           $notes = "$notes`n`n$footer"
           [System.IO.File]::WriteAllText("release-notes.md", $notes, (New-Object System.Text.UTF8Encoding($false)))
 

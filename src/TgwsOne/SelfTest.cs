@@ -30,6 +30,8 @@ internal static class SelfTest
         Section("app dir", () => paths.AppDir);
         Section("engine", () =>
         {
+            // No separate engine file any more: the MTProto engine is part of this executable.
+            if (!paths.EngineOverridden) return "OK встроенный (нативный движок в приложении)";
             if (File.Exists(paths.Engine)) return $"OK {paths.Engine}";
             problems++;
             return $"MISSING {paths.Engine}";

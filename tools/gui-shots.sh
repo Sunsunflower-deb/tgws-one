@@ -31,9 +31,9 @@ work=${GUI_SHOTS_WORK:-/Development/personal/dump/tgws/gui-shots-work}
 
 app_dll=$repo/src/TgwsOne/bin/Debug/net10.0/TgwsOne.dll
 fake_zapret=$repo/tests/FakeZapret/bin/Debug/net10.0/FakeZapret
-engine=$repo/out/engine/linux-x64/tgws-engine
+engine=$repo/src/TgwsOne/bin/Debug/net10.0/TgwsOne   # the app itself in --engine mode; the engine is built in
 
-[ -x "$engine" ] || { echo "no engine at $engine: run make engine first" >&2; exit 1; }
+[ -x "$engine" ] || { echo "no app at $engine: run dotnet build first" >&2; exit 1; }
 if [ -e /tmp/.X11-unix/X99 ]; then
     echo "display :99 is already in use: something else is running there" >&2
     exit 1
@@ -112,7 +112,8 @@ cleanup_scene() {
         wait "$app_pid" 2>/dev/null
     fi
     if [ -n "$root" ]; then
-        # the engine is detached and outlives the app; the CLI of the same data dir stops it (and must never see a display)
+        # an engine started by the CLI is detached and outlives the app; stop it without a display. The in-process
+        # engine died with the app and needs no stop.
         env -u DISPLAY -u WAYLAND_DISPLAY dotnet "$app_dll" --stop >/dev/null 2>&1
         service stop
     fi
@@ -254,7 +255,7 @@ run_scene() {
 # ----- setups -----
 setup_service() { service start; }
 setup_plain() { :; }
-setup_no_engine() { export TGWS_ENGINE=/nonexistent/tgws-engine; service start; }
+setup_no_engine() { export TGWS_ENGINE=/nonexistent/tgwsone; service start; }
 # the engine dies 100 ms after every start: the service restarts it with a backoff («перезапуск после сбоя…»)
 setup_bypass_crash() {
     printf 'crash_after_ms=100\n' >"$TGWS_SERVICE_ROOT/fakez.ctl"
@@ -273,7 +274,7 @@ setup_lan() {
     printf '[proxy]\nport=%s\nhost=%s\n[app]\nfirstrun=done\n' "$((port_base + scene_no))" "$host" >"$TGWS_DATA_DIR/tgwsone.ini"
     service start
 }
-setup_wizard_no_engine() { setup_wizard; export TGWS_ENGINE=/nonexistent/tgws-engine; }
+setup_wizard_no_engine() { setup_wizard; export TGWS_ENGINE=/nonexistent/tgwsone; }
 setup_wizard() { WIZARD=1; export WIZARD; printf '[proxy]\nport=%s\n' "$((port_base + scene_no))" >"$TGWS_DATA_DIR/tgwsone.ini"; service start; }
 
 # ----- actions (coordinates are relative to the window; see the screenshots they produce) -----

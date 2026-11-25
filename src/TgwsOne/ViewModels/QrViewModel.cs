@@ -8,7 +8,7 @@ namespace TgwsOne.ViewModels;
 /// <summary>«QR для телефона»: the code for the saved port and secret at the address of this machine on the local network, and the same link as text.</summary>
 internal sealed partial class QrViewModel : ObservableObject
 {
-    public const string Note = "Любой в этой сети, у кого есть код, сможет пользоваться прокси. Если телефон не подключается — брандмауэр мог заблокировать tgws-engine.";
+    public const string Note = "Любой в этой сети, у кого есть код, сможет пользоваться прокси. Если телефон не подключается — брандмауэр мог заблокировать TgwsOne.";
     public const string NoAddressText = "Не нашёл адрес в этой сети: подключитесь к Wi-Fi или кабелю — тогда здесь появится код.";
 
     private readonly IClipboardService _clipboard;

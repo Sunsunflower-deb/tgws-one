@@ -29,7 +29,7 @@ unit=tgwsone-zapret.service
 native_libs=(libSkiaSharp.so libHarfBuzzSharp.so)   # те же, что в install-tree.sh
 
 if [ "$desktop_only" -eq 0 ]; then
-    rm -f "$libdir/tgwsone" "$libdir/tgws-engine" "$bindir/tgwsone" "$unitdir/$unit"
+    rm -f "$libdir/tgwsone" "$bindir/tgwsone" "$unitdir/$unit"
     for lib in "${native_libs[@]}"; do rm -f "$libdir/$lib"; done
     rm -rf "$libdir/zapret2" "$libdir/lists"
     rmdir "$libdir" "$unitdir" 2>/dev/null || true

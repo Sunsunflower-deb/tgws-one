@@ -4,7 +4,6 @@ RID_LINUX := linux-x64
 PUB := out/publish
 
 APP_BIN    := $(PUB)/$(RID_LINUX)/tgwsone
-ENGINE_BIN := out/engine/$(RID_LINUX)/tgws-engine
 ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
 LISTS_SRC  := $(PUB)/$(RID_LINUX)/lists
 # The UI's native libraries: publish leaves them next to the single-file executable instead of inside it (a bundled copy
@@ -20,18 +19,16 @@ DIST_NAME := tgwsone-$(VERSION)
 DIST_DIR  := dist/$(DIST_NAME)
 DIST_TAR  := dist/$(DIST_NAME)-linux-x64.tar.gz
 
-.PHONY: engine engine-lock zapret2 build build-win test test-engine run install uninstall install-desktop uninstall-desktop dist-linux clean
+.PHONY: zapret2 build build-win test test-engine test-network run install uninstall install-desktop uninstall-desktop dist-linux clean
 
+# The MTProto-over-WebSocket engine is compiled into the application (src/TgwsOne.Engine). Kept as a target so
+# older instructions and CI jobs that still say `make engine` do not fail.
 engine:
-	engine/build-engine.sh
+	@echo "движок прокси встроен в tgwsone: отдельная сборка не нужна"
 
 # Fetches the pinned zapret2 release (zapret2/zapret2.lock) into out/zapret2/<rid>/.
 zapret2:
 	zapret2/fetch.sh
-
-# Regenerates engine/requirements.lock (every package with hashes, for Linux and Windows) from requirements.in.
-engine-lock:
-	uv pip compile --universal --generate-hashes --allow-unsafe --python-version 3.12 engine/requirements.in -o engine/requirements.lock
 
 # The zapret2 bundle and the target lists sit next to the executable: <publish>/zapret2/ and <publish>/lists/.
 build:
@@ -66,22 +63,27 @@ endef
 
 test:
 	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,,)
 	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,,)
 
 test-engine:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/out/engine/$(RID_LINUX)/tgws-engine)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
+
+# End-to-end against Telegram itself (WebSocket pool and the Cloudflare proxy route). Add TGWS_REAL_BLOCKED=1 to
+# also try the raw DC TCP fallback and TLS to the masked Cloudflare names, which many networks block on their own.
+test-network:
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,--filter "FullyQualifiedName~RealTelegram",TGWS_REAL_NETWORK=1)
 
 run:
 	$(APP_BIN) $(ARGS)
 
-# Installs the two binaries side by side (the app finds its engine, the zapret2 bundle and the shipped lists next to
-# itself), a relative symlink in bin/, the systemd unit of the bypass service (not enabled), the menu entry and the icon.
-# Does not build: run `make zapret2 build engine` first. DESTDIR is for packagers; PREFIX=/usr for a package.
+# Installs the application (which contains the proxy engine), the zapret2 bundle and the shipped lists, a relative
+# symlink in bin/, the systemd unit of the bypass service (not enabled), the menu entry and the icon.
+# Does not build: run `make zapret2 build` first. DESTDIR is for packagers; PREFIX=/usr for a package.
 # The layout itself is packaging/linux/install-tree.sh, which the release tarball's install.sh and the PKGBUILD use as well.
 install:
 	rm -rf $(INSTALL_SRC) && mkdir -p $(INSTALL_SRC)
 	ln -s $(CURDIR)/$(APP_BIN) $(INSTALL_SRC)/tgwsone
-	ln -s $(CURDIR)/$(ENGINE_BIN) $(INSTALL_SRC)/tgws-engine
 	for lib in $(NATIVE_LIBS); do ln -s $(CURDIR)/$(PUB)/$(RID_LINUX)/$$lib $(INSTALL_SRC)/$$lib; done
 	ln -s $(CURDIR)/$(ZAPRET_SRC) $(INSTALL_SRC)/zapret2
 	ln -s $(CURDIR)/$(LISTS_SRC) $(INSTALL_SRC)/lists
@@ -108,12 +110,11 @@ uninstall:
 # tarball's checksum in it, and its tgwsone-bin.install. Does not build: run `make zapret2 build engine` first.
 # Built on this machine it links against this machine's glibc; the CI builds the release one on an older system.
 dist-linux:
-	@[ -f $(APP_BIN) ] && [ -f $(ENGINE_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2, make build и make engine" >&2; exit 1; }
+	@[ -f $(APP_BIN) ] && [ -f $(ZAPRET_SRC)/nfqws2 ] && [ -d $(LISTS_SRC) ] || { echo "сначала выполните make zapret2 и make build" >&2; exit 1; }
 	@grep -qx "pkgver=$(VERSION)" packaging/arch/PKGBUILD || { echo "pkgver в packaging/arch/PKGBUILD не равен версии сборки $(VERSION)" >&2; exit 1; }
 	rm -rf $(DIST_DIR) $(DIST_TAR) $(DIST_TAR).sha256 dist/PKGBUILD dist/tgwsone-bin.install
 	mkdir -p $(DIST_DIR)/packaging/linux
 	install -m 0755 $(APP_BIN) $(DIST_DIR)/tgwsone
-	install -m 0755 $(ENGINE_BIN) $(DIST_DIR)/tgws-engine
 	for lib in $(NATIVE_LIBS); do install -m 0755 $(PUB)/$(RID_LINUX)/$$lib $(DIST_DIR)/$$lib; done
 	cp -r --no-preserve=ownership,mode $(ZAPRET_SRC) $(DIST_DIR)/zapret2
 	cp -r --no-preserve=ownership,mode $(LISTS_SRC) $(DIST_DIR)/lists
@@ -123,6 +124,7 @@ dist-linux:
 	install -m 0755 packaging/linux/install-tree.sh packaging/linux/uninstall-tree.sh $(DIST_DIR)/packaging/linux/
 	install -m 0644 packaging/linux/tgwsone-zapret.service.in packaging/linux/tgwsone.desktop packaging/linux/tgwsone.png $(DIST_DIR)/packaging/linux/
 	install -m 0644 README.md LICENSE $(DIST_DIR)/
+	install -m 0644 src/TgwsOne.Engine/UPSTREAM.md src/TgwsOne.Engine/UPSTREAM-LICENSE $(DIST_DIR)/
 	cd dist && tar --sort=name --owner=0 --group=0 --numeric-owner $(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) -cf - $(DIST_NAME) | gzip -n -9 > $(notdir $(DIST_TAR))
 	cd dist && sha256sum $(notdir $(DIST_TAR)) > $(notdir $(DIST_TAR)).sha256
 	install -m 0644 packaging/arch/PKGBUILD packaging/arch/tgwsone-bin.install dist/

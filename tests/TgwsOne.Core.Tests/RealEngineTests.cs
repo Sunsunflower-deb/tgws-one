@@ -10,11 +10,11 @@ public sealed class RealEngineFactAttribute : FactAttribute
     public RealEngineFactAttribute()
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Variable)))
-            Skip = $"opt-in: set {Variable} to the built tgws-engine (make test-engine)";
+            Skip = $"opt-in: set {Variable} to the built tgwsone (make test-engine)";
     }
 }
 
-/// <summary>The real PyInstaller-built engine instead of FakeEngine: proves the argv we build is what it accepts.</summary>
+/// <summary>The real native engine (tgwsone --engine) instead of FakeEngine: proves the argv we build is what it accepts.</summary>
 [Collection(EnvCollection.Name)]
 public class RealEngineTests : IDisposable
 {
@@ -43,7 +43,7 @@ public class RealEngineTests : IDisposable
         return port;
     }
 
-    // Both the PyInstaller bootloader and the interpreter process it spawns run this very file.
+    // Tests the binary itself; no other engine process shares its name.
     private IEnumerable<Process> EngineProcesses()
         => Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_engine)).Where(p =>
         {
@@ -78,7 +78,7 @@ public class RealEngineTests : IDisposable
         Assert.Equal(StopOutcome.Stopped, await c.StopAsync());
 
         Assert.False(c.GetStatus().Running);
-        Assert.True(TestEnv.WaitFor(() => !EngineProcesses().Any()), "tgws-engine processes left after stop (the PyInstaller child too)");
+        Assert.True(TestEnv.WaitFor(() => !EngineProcesses().Any()), "engine processes left after stop");
         Assert.True(TestEnv.WaitFor(() => !PortProbe.IsBusy(System.Net.IPAddress.Loopback, port)), "port still busy after stop");
     }
 

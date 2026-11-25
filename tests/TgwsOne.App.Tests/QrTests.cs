@@ -199,7 +199,7 @@ public class QrTests
     [Fact]
     public void TheNote_SaysWhoCanUseTheProxy_AndWhyThePhoneMightNotConnect()
     {
-        Assert.Equal("Любой в этой сети, у кого есть код, сможет пользоваться прокси. Если телефон не подключается — брандмауэр мог заблокировать tgws-engine.",
+        Assert.Equal("Любой в этой сети, у кого есть код, сможет пользоваться прокси. Если телефон не подключается — брандмауэр мог заблокировать TgwsOne.",
                      QrViewModel.Note);
     }
 

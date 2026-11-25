@@ -1,8 +1,8 @@
 ﻿<#
-    Сборка MSI-установщика TgwsOne 2.x из уже собранных частей: приложения, движка прокси и обхода.
+    Сборка MSI-установщика TgwsOne 2.x из уже собранных частей: приложения (движок прокси внутри) и обхода.
 
     Пример:
-      .\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0
+      .\build.ps1 -AppDir out\publish\win-x64 -Version 2.0.0.0
 
     Требуется:
       * WiX 5 и два его расширения:
@@ -10,14 +10,12 @@
           wix extension add -g WixToolset.Util.wixext/5.0.2 WixToolset.Firewall.wixext/5.0.2
       * -AppDir — папка с TgwsOne.exe, zapret2\ и lists\ (на Linux: make build-win; на Windows: dotnet publish -r win-x64
         --self-contained -p:PublishSingleFile=true, затем zapret2\fetch.ps1 и копирование zapret2\ и lists\ рядом);
-      * -Engine — tgws-engine.exe, его собирает engine\build-engine.ps1 (PyInstaller, только на Windows).
 
     Пути без диска и без \\ отсчитываются от папки этого скрипта.
 #>
 [CmdletBinding()]
 param(
     [string]$AppDir = "out\publish\win-x64",
-    [string]$Engine = "out\engine\win-x64\tgws-engine.exe",
     [string]$Version = "2.0.0.0",
     [string]$Out,
     # Где собирать дерево для MSI. Должно быть на локальном диске: с сетевой папки (например, общей папки виртуальной
@@ -42,7 +40,6 @@ function Resolve-Input([string]$path)
 
 if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "версия должна быть из четырёх чисел (2.0.0.0): $Version" }
 $AppDir = Resolve-Input $AppDir
-$Engine = Resolve-Input $Engine
 if (-not $StageDir) { $StageDir = Join-Path $root "build\stage" }
 $StageDir = Resolve-Input $StageDir
 
@@ -107,7 +104,6 @@ if (-not (Get-ChildItem (Join-Path $AppDir "lists") -Filter *.txt -ErrorAction S
 {
     throw "в $AppDir\lists нет списков *.txt"
 }
-if (-not (Test-Path $Engine)) { throw "не найден движок прокси: $Engine (его собирает engine\build-engine.ps1)" }
 foreach ($rel in @("installer\TgwsOne.wxs", "src\app.ico", "README.md", "LICENSE"))
 {
     if (-not (Test-Path (Join-Path $root $rel))) { throw "не найден $rel рядом со скриптом" }
@@ -117,7 +113,7 @@ foreach ($rel in @("installer\TgwsOne.wxs", "src\app.ico", "README.md", "LICENSE
 # Папка для дерева стирается целиком, а путь к ней задаёт вызывающий: не позволяем указать на корень диска, на папку
 # скрипта, на папку приложения или на любую папку над ними (-StageDir C:\ и опечатки такого рода).
 $stageFull = [System.IO.Path]::GetFullPath($StageDir).TrimEnd('\') + '\'
-foreach ($protected in @($root, $AppDir, (Split-Path -Parent $Engine)))
+foreach ($protected in @($root, $AppDir))
 {
     $p = [System.IO.Path]::GetFullPath($protected).TrimEnd('\') + '\'
     if ($p.StartsWith($stageFull, [System.StringComparison]::OrdinalIgnoreCase))
@@ -133,12 +129,12 @@ New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 & robocopy $AppDir $StageDir /E /XF *.pdb /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy: не удалось скопировать $AppDir ($LASTEXITCODE)" }
 
-Copy-Item $Engine (Join-Path $StageDir "tgws-engine.exe") -Force
 Copy-Item (Join-Path $root "README.md") $StageDir -Force
 Copy-Item (Join-Path $root "LICENSE") $StageDir -Force
+Copy-Item (Join-Path $root "src\TgwsOne.Engine\UPSTREAM.md") $StageDir -Force
+Copy-Item (Join-Path $root "src\TgwsOne.Engine\UPSTREAM-LICENSE") $StageDir -Force
 
 Sign-File (Join-Path $StageDir "TgwsOne.exe")
-Sign-File (Join-Path $StageDir "tgws-engine.exe")
 
 # ---------- MSI ----------
 $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"

@@ -24,7 +24,7 @@ public sealed record ProxyStatus(bool Running, bool Listening, int Port, bool Po
 /// Starts, stops and inspects the proxy engine. Holds no state of its own that matters: the INI and the pid
 /// file are re-read on every call, so a CLI process and a GUI process can control the same engine.
 /// </summary>
-public sealed class ProxyController
+public sealed class ProxyController : IProxyEngineControl
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan LockPollInterval = TimeSpan.FromMilliseconds(100);
@@ -35,6 +35,7 @@ public sealed class ProxyController
     private readonly AppLog _log;
     private readonly TimeSpan _startTimeout;
     private readonly TimeSpan _lockTimeout;
+    private readonly bool _useControlChannel;
 
     // The engine this instance started last. Holding the Process lets .NET reap it when it exits,
     // so a long-lived host (the GUI) does not collect a zombie per restart.
@@ -42,12 +43,16 @@ public sealed class ProxyController
 
     /// <param name="startTimeout">How long to wait for the engine to accept connections (default 15 s).</param>
     /// <param name="lockTimeout">How long to wait for another starter to finish (default 20 s).</param>
-    public ProxyController(AppPaths paths, AppLog log, TimeSpan? startTimeout = null, TimeSpan? lockTimeout = null)
+    /// <param name="useControlChannel">Ask a running window to control its in-process engine before touching any
+    /// process. The in-process host's own fallback turns this off so it cannot call back into itself.</param>
+    public ProxyController(AppPaths paths, AppLog log, TimeSpan? startTimeout = null, TimeSpan? lockTimeout = null,
+        bool useControlChannel = true)
     {
         _paths = paths;
         _log = log;
         _startTimeout = startTimeout ?? TimeSpan.FromSeconds(15);
         _lockTimeout = lockTimeout ?? TimeSpan.FromSeconds(20);
+        _useControlChannel = useControlChannel;
     }
 
     /// <summary>
@@ -58,9 +63,39 @@ public sealed class ProxyController
     /// <exception cref="TimeoutException">Another starter held the lock for longer than the lock timeout.</exception>
     public async Task<StartResult> StartAsync(CancellationToken ct = default)
     {
+        // The window, when it is running, owns the engine: ask it first. This is before the start lock on purpose —
+        // the window's handler takes that same lock, and holding it while waiting for the answer would deadlock.
+        if (_useControlChannel)
+        {
+            if (await ControlAsync(EngineControlCommands.Start, _startTimeout + TimeSpan.FromSeconds(5), ct)
+                    .ConfigureAwait(false) is { } viaWindow)
+                return ToStartResult(viaWindow);
+
+            // No answer to "start", but maybe the window is there and still finishing it. Starting a second engine
+            // now would race it for the port.
+            if (await ControlAsync(EngineControlCommands.Status, TimeSpan.FromMilliseconds(500), ct)
+                    .ConfigureAwait(false) is { Ok: true } status)
+            {
+                return status.Running || status.Listening
+                    ? new StartResult(StartOutcome.AlreadyRunning, status.Port)
+                    : new StartResult(StartOutcome.Timeout, status.Port);
+            }
+        }
+
         await using FileStream startLock = await AcquireStartLockAsync(ct).ConfigureAwait(false);
         return await StartLockedAsync(ct).ConfigureAwait(false);
     }
+
+    private async Task<EngineControlResponse?> ControlAsync(string command, TimeSpan timeout, CancellationToken ct)
+        => _useControlChannel
+            ? await EngineControlClient.SendAsync(_paths, new EngineControlRequest(command), timeout, ct)
+                .ConfigureAwait(false)
+            : null;
+
+    private StartResult ToStartResult(EngineControlResponse r)
+        => new(Enum.TryParse(r.Outcome, out StartOutcome outcome) ? outcome : StartOutcome.EngineExited,
+            r.Port, r.OldPort, r.ExitCode,
+            r.Output.Length > 0 ? r.Output : r.Error ?? "");
 
     // FileShare.None is an exclusive lock: flock on Unix, a sharing violation on Windows. The OS drops it with
     // the process, so a crashed starter cannot leave it stuck. The descriptor is close-on-exec, so the engine
@@ -187,6 +222,12 @@ public sealed class ProxyController
 
     public async Task<StopOutcome> StopAsync(CancellationToken ct = default)
     {
+        if (await ControlAsync(EngineControlCommands.Stop, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false) is { } viaWindow)
+        {
+            if (!viaWindow.Ok) throw new InvalidOperationException(viaWindow.Error ?? "окно не остановило прокси");
+            return Enum.TryParse(viaWindow.Outcome, out StopOutcome result) ? result : StopOutcome.NotRunning;
+        }
+
         EngineRecord? rec = EngineRecord.Read(_paths.PidFile);
         if (rec is null || !rec.IsAlive())
         {
@@ -195,8 +236,9 @@ public sealed class ProxyController
             return StopOutcome.NotRunning;
         }
 
-        // The engine and everything it spawned: the PyInstaller one-file bootloader runs the real
-        // interpreter as a child, and killing only the bootloader would leave it holding the port.
+        // The engine and everything it spawned. A native engine is one process, but an older
+        // PyInstaller one-file engine (still selectable with TGWS_ENGINE) ran the interpreter as a child;
+        // killing only the bootloader would leave it holding the port.
         if (_child is { } own && own.Id == rec.Pid)
             KillTree(own);
         else
@@ -228,6 +270,15 @@ public sealed class ProxyController
 
     public ProxyStatus GetStatus()
     {
+        if (_useControlChannel)
+        {
+            EngineControlResponse? viaWindow = EngineControlClient.TrySend(
+                _paths, new EngineControlRequest(EngineControlCommands.Status), TimeSpan.FromMilliseconds(300));
+            if (viaWindow is { Ok: true })
+                return new ProxyStatus(viaWindow.Running, viaWindow.Listening, viaWindow.Port,
+                    viaWindow.PortBusyByOther, viaWindow.Pid);
+        }
+
         ProxySettings s = ProxySettingsStore.Load(IniFile.Load(_paths.Ini));
         EngineRecord? rec = EngineRecord.Read(_paths.PidFile);
         bool running = rec?.IsAlive() == true;
@@ -243,6 +294,13 @@ public sealed class ProxyController
     /// </summary>
     public bool RestartNeeded()
     {
+        if (_useControlChannel)
+        {
+            EngineControlResponse? viaWindow = EngineControlClient.TrySend(
+                _paths, new EngineControlRequest(EngineControlCommands.RestartNeeded), TimeSpan.FromMilliseconds(300));
+            if (viaWindow is { Ok: true }) return viaWindow.RestartNeeded;
+        }
+
         if (EngineRecord.Read(_paths.PidFile) is not { } rec || !rec.IsAlive()) return false;
 
         ProxySettings s = ProxySettingsStore.Load(IniFile.Load(_paths.Ini));

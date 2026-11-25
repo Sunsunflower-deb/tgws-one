@@ -4,7 +4,7 @@
 #
 #   install-tree.sh [--desktop-only] <destdir> <prefix> <srcdir>
 #
-# <srcdir> содержит tgwsone, tgws-engine, libSkiaSharp.so, libHarfBuzzSharp.so, zapret2/, lists/ и
+# <srcdir> содержит tgwsone (движок прокси встроен), libSkiaSharp.so, libHarfBuzzSharp.so, zapret2/, lists/ и
 # packaging/linux/{tgwsone-zapret.service.in,tgwsone.desktop,tgwsone.png}. <destdir> — корень для упаковщиков (пусто для
 # настоящей установки), <prefix> — например /usr или /usr/local. Службу не включает и systemctl не вызывает.
 # --desktop-only кладёт только пункт меню и значок: для них собирать ничего не нужно.
@@ -37,7 +37,7 @@ unit=tgwsone-zapret.service
 native_libs=(libSkiaSharp.so libHarfBuzzSharp.so)
 
 need() {
-    [ -e "$1" ] || { echo "в $src нет ${1#"$src"/}: сначала соберите проект (make zapret2 build engine)" >&2; exit 1; }
+    [ -e "$1" ] || { echo "в $src нет ${1#"$src"/}: сначала соберите проект (make zapret2 build)" >&2; exit 1; }
 }
 
 install_desktop() {
@@ -54,7 +54,6 @@ if [ "$desktop_only" -eq 1 ]; then
 fi
 
 need "$src/tgwsone"
-need "$src/tgws-engine"
 for lib in "${native_libs[@]}"; do need "$src/$lib"; done
 need "$src/zapret2/nfqws2"
 need "$src/lists"
@@ -63,7 +62,6 @@ need "$pkg/$unit.in"
 install -d "$libdir" "$bindir" "$unitdir"
 install -m 0755 "$src/tgwsone" "$libdir/tgwsone"
 for lib in "${native_libs[@]}"; do install -m 0755 "$src/$lib" "$libdir/$lib"; done
-install -m 0755 "$src/tgws-engine" "$libdir/tgws-engine"
 ln -sf ../lib/tgwsone/tgwsone "$bindir/tgwsone"
 
 # Пакет zapret2 копируется с --no-preserve=ownership, а не `cp -a`: после установки от root файлы должны принадлежать root, а не

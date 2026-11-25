@@ -4,8 +4,8 @@
 антивирусов к самому exe/msi. Драйвер WinDivert она не «обелит» — он подписан своим автором,
 и детекты `RiskTool/WinDivert` от нашей подписи не зависят.
 
-Подписывать нужно **три файла**: `TgwsOne.exe` (приложение и служба — это один и тот же файл) и `tgws-engine.exe`
-(движок прокси) до упаковки в MSI, а затем сам `TgwsOne-x.y.z.msi`. `winws2.exe`, `WinDivert.dll` и драйвер
+Подписывать нужно **два файла**: `TgwsOne.exe` (приложение, служба и встроенный движок прокси — это один и тот же
+файл) до упаковки в MSI, а затем сам `TgwsOne-x.y.z.msi`. `winws2.exe`, `WinDivert.dll` и драйвер
 `WinDivert64.sys` — чужие файлы, их не подписываем.
 
 ## Чем подписывать
@@ -26,7 +26,7 @@
 ```powershell
 # 1. exe (из дерева, которое build.ps1 собирает перед упаковкой: по умолчанию build\stage)
 signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-  /f cert.pfx /p "пароль" build\stage\TgwsOne.exe build\stage\tgws-engine.exe
+  /f cert.pfx /p "пароль" build\stage\TgwsOne.exe
 
 # 2. msi (после сборки)
 signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
@@ -52,7 +52,7 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
 
 ```powershell
 # PFX
-.\build.ps1 -AppDir out\publish\win-x64 -Engine out\engine\win-x64\tgws-engine.exe -Version 2.0.0.0 `
+.\build.ps1 -AppDir out\publish\win-x64 -Version 2.0.0.0 `
   -Pfx cert.pfx -PfxPassword "пароль"
 
 # сертификат из хранилища/токена
@@ -67,7 +67,6 @@ $env:TGWS_SIGN_PFX = "cert.pfx"; $env:TGWS_SIGN_PFX_PASSWORD = "пароль"; .
 | Параметр | По умолчанию | Что это |
 |---|---|---|
 | `-AppDir` | `out\publish\win-x64` | Папка с `TgwsOne.exe`, `zapret2\` и `lists\` (`make build-win` или `dotnet publish` + `zapret2\fetch.ps1`) |
-| `-Engine` | `out\engine\win-x64\tgws-engine.exe` | Движок прокси; его собирает `engine\build-engine.ps1` |
 | `-Version` | `2.0.0.0` | Версия MSI, четыре числа |
 | `-Out` | `dist\TgwsOne-<x.y.z>.msi` | Куда положить MSI |
 | `-StageDir` | `build\stage` | Где собирать дерево для упаковки; лучше на локальном диске, не на сетевой папке |
@@ -77,13 +76,12 @@ $env:TGWS_SIGN_PFX = "cert.pfx"; $env:TGWS_SIGN_PFX_PASSWORD = "пароль"; .
 
 Без `-Pfx` и `-Thumbprint` сборка идёт без подписи, о чём `build.ps1` пишет в вывод.
 
-Порядок: проверка входов → дерево в `-StageDir` (без `.pdb`) → подпись `TgwsOne.exe` и `tgws-engine.exe` →
-`wix build` → подпись MSI.
+Порядок: проверка входов → дерево в `-StageDir` (без `.pdb`) → подпись `TgwsOne.exe` → `wix build` → подпись MSI.
 
 ## Подпись в CI
 
 В workflow (задача `windows`) уже есть поддержка: если в настройках репозитория заданы секреты
-`SIGN_PFX_BASE64` (файл PFX в base64) и `SIGN_PFX_PASSWORD`, сборка подписывает оба exe и MSI
+`SIGN_PFX_BASE64` (файл PFX в base64) и `SIGN_PFX_PASSWORD`, сборка подписывает exe и MSI
 автоматически. Без секретов шаг просто пропускается. Архив для Linux (`.tar.gz`) не подписывается: рядом с ним
 лежит `.sha256`.
 

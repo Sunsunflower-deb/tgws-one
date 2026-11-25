@@ -10,6 +10,10 @@ public sealed class AppPaths
 {
     public string AppDir { get; }
     public string Engine { get; }
+
+    /// <summary>True when <c>TGWS_ENGINE</c> named the engine (tests, a custom build). Otherwise <see cref="Engine"/> is this executable.</summary>
+    public bool EngineOverridden { get; }
+
     public string DataDir { get; }
     public string Ini { get; }
     public string ListsDir { get; }
@@ -17,6 +21,9 @@ public sealed class AppPaths
     public string RunDir { get; }
     public string PidFile { get; }
     public string StartLockFile { get; }
+
+    /// <summary>The window's control socket (Unix) or the seed of its pipe name (Windows); see <see cref="EngineControlServer"/>.</summary>
+    public string ControlSocket { get; }
     public string AppLogFile { get; }
     public string ProxyLogFile { get; }
     public string EngineConsoleLog { get; }
@@ -26,12 +33,29 @@ public sealed class AppPaths
         OperatingSystem.IsWindows() ? OsKind.Windows : OsKind.Linux,
         Environment.GetEnvironmentVariable,
         AppContext.BaseDirectory,
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        CurrentExecutable());
 
-    public static AppPaths For(OsKind os, Func<string, string?> env, string appDir, string home)
-        => new(os, env, appDir, home);
+    // `dotnet run`/`dotnet TgwsOne.dll` report dotnet as the process; the detached engine must still be *this*
+    // program, so prefer the apphost next to the assembly when there is one.
+    private static string? CurrentExecutable()
+    {
+        string? process = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(process)) return null;
+        if (!string.Equals(Path.GetFileNameWithoutExtension(process), "dotnet", StringComparison.OrdinalIgnoreCase))
+            return process;
+        string candidate = Path.Combine(AppContext.BaseDirectory,
+            OperatingSystem.IsWindows() ? "TgwsOne.exe" : "TgwsOne");
+        return File.Exists(candidate) ? candidate : process;
+    }
 
-    private AppPaths(OsKind os, Func<string, string?> env, string appDir, string home)
+    /// <param name="defaultEngine">Where the engine lives unless <c>TGWS_ENGINE</c> says otherwise. The application
+    /// passes its own executable (the engine is a mode of it); tests leave this null and get the usual file name.</param>
+    public static AppPaths For(OsKind os, Func<string, string?> env, string appDir, string home,
+        string? defaultEngine = null)
+        => new(os, env, appDir, home, defaultEngine);
+
+    private AppPaths(OsKind os, Func<string, string?> env, string appDir, string home, string? defaultEngine = null)
     {
         bool win = os == OsKind.Windows;
         char sep = win ? '\\' : '/';
@@ -47,9 +71,11 @@ public sealed class AppPaths
         string Xdg(string name, string fallback) => Env(name) is { Length: > 0 } v && v.StartsWith('/') ? v : fallback;
 
         AppDir = appDir.Length > 1 ? appDir.TrimEnd(sep) : appDir;
-        Engine = Env("TGWS_ENGINE") is { Length: > 0 } eng
-            ? eng
-            : Join(AppDir, win ? "tgws-engine.exe" : "tgws-engine");
+        string engineOverride = Env("TGWS_ENGINE");
+        EngineOverridden = engineOverride.Length > 0;
+        Engine = EngineOverridden
+            ? engineOverride
+            : defaultEngine is { Length: > 0 } ? defaultEngine : Join(AppDir, win ? "TgwsOne.exe" : "tgwsone");
 
         string iniName = win ? "TgwsOne.ini" : "tgwsone.ini";
         string state = win ? "" : Join(Xdg("XDG_STATE_HOME", Join(home, ".local", "state")), "tgwsone");
@@ -78,6 +104,7 @@ public sealed class AppPaths
         ListsDir = Join(DataDir, "lists");
         PidFile = Join(RunDir, "engine.pid");
         StartLockFile = Join(RunDir, "start.lock");
+        ControlSocket = Join(RunDir, "engine.sock");
         AppLogFile = Join(LogsDir, "app.log");
         ProxyLogFile = Join(LogsDir, "proxy.log");
         EngineConsoleLog = Join(LogsDir, "engine-console.log");
