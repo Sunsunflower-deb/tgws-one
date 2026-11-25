@@ -154,7 +154,17 @@ public sealed class EngineControlServer : IAsyncDisposable
         try
         {
             PrivateDirectory.Ensure(paths.RunDir);
-            server._loop = server.RunAsync(server._stop.Token);
+            if (OperatingSystem.IsWindows())
+            {
+                server._loop = server.RunPipeAsync(server._stop.Token);
+            }
+            else
+            {
+                // Created here and not in the loop below: an exception inside an async method goes to its task, where
+                // this catch never sees it, and the window would not know its control channel was never up.
+                server._listener = Listen(paths.ControlSocket);
+                server._loop = server.RunUnixAsync(server._stop.Token);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SocketException
                                        or PlatformNotSupportedException or ArgumentException)
@@ -170,29 +180,29 @@ public sealed class EngineControlServer : IAsyncDisposable
         return "tgwsone-engine-" + Convert.ToHexStringLower(hash)[..16];
     }
 
-    private async Task RunAsync(CancellationToken ct)
-    {
-        if (OperatingSystem.IsWindows()) await RunPipeAsync(ct).ConfigureAwait(false);
-        else await RunUnixAsync(ct).ConfigureAwait(false);
-    }
-
+    /// <summary>Whatever file is at the socket's path was left behind by an owner that died without cleaning up.</summary>
     [UnsupportedOSPlatform("windows")]
-    private async Task RunUnixAsync(CancellationToken ct)
+    private static Socket Listen(string path)
     {
-        if (File.Exists(_paths.ControlSocket)) File.Delete(_paths.ControlSocket);
+        if (File.Exists(path)) File.Delete(path);
         var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            listener.Bind(new UnixDomainSocketEndPoint(_paths.ControlSocket));
+            listener.Bind(new UnixDomainSocketEndPoint(path));
             listener.Listen(8);
+            return listener;
         }
         catch
         {
             listener.Dispose();
             throw;
         }
-        _listener = listener;
+    }
 
+    [UnsupportedOSPlatform("windows")]
+    private async Task RunUnixAsync(CancellationToken ct)
+    {
+        Socket listener = _listener!;
         while (!ct.IsCancellationRequested)
         {
             Socket client;

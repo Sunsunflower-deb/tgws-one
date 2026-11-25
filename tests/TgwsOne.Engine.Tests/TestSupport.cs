@@ -12,13 +12,15 @@ internal sealed class TempPaths : IDisposable
     public string Root { get; }
     public AppPaths Paths { get; }
 
-    public TempPaths()
+    /// <param name="dataDir">Where the profile goes under <see cref="Root"/>; a path of the test's choosing when the
+    /// default location would not do (a Unix socket address has a length limit).</param>
+    public TempPaths(string dataDir = "data")
     {
         Root = Path.Combine(Path.GetTempPath(), "tgwsone-engine-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         var env = new Dictionary<string, string>
         {
-            ["TGWS_DATA_DIR"] = Path.Combine(Root, "data"),
+            ["TGWS_DATA_DIR"] = Path.Combine(Root, dataDir),
             ["XDG_RUNTIME_DIR"] = Path.Combine(Root, "run"),
             ["LOCALAPPDATA"] = Path.Combine(Root, "local"),
         };

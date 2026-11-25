@@ -319,6 +319,43 @@ public class EngineControlChannelTests
         Assert.Equal(42, response.Pid);
     }
 
+    /// <summary>A profile so deep in the temporary folder that its control socket does not fit in a Unix socket address
+    /// (108 bytes at most): the listener cannot be created at all.</summary>
+    private static TempPaths UnbindableProfile()
+        => new(Path.Combine(new string('d', 100), "data"));
+
+    [Fact]
+    public async Task AListenerThatCannotBeCreated_IsReportToTheLog()
+    {
+        // The window learns that its control channel is down from this log line and from nothing else.
+        using TempPaths temp = UnbindableProfile();
+        var log = new List<string>();
+
+        EngineControlServer server = EngineControlServer.Start(
+            temp.Paths, _ => Task.FromResult(new EngineControlResponse { Ok = true }), log.Add);
+        try
+        {
+            Assert.Single(log);
+        }
+        finally
+        {
+            await server.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task AServerWhoseListenerCouldNotBeCreated_DisposesWithoutThrowing()
+    {
+        // The application disposes this server on its way out, before it stops the engine: an exception here would
+        // end the process with a crash instead.
+        using TempPaths temp = UnbindableProfile();
+
+        EngineControlServer server = EngineControlServer.Start(
+            temp.Paths, _ => Task.FromResult(new EngineControlResponse { Ok = true }));
+
+        await server.DisposeAsync();
+    }
+
     [Fact]
     public async Task NoServer_ReturnsNull_WithoutHanging()
     {
