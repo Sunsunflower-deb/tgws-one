@@ -7,7 +7,7 @@
     <AssemblyName>TgwsOne.Android</AssemblyName>
     <ApplicationId>io.github.sunsunflowerdeb.tgwsone</ApplicationId>
     <ApplicationTitle>TgwsOne</ApplicationTitle>
-    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationVersion>2</ApplicationVersion>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <!-- Android 8.0: the version the plan's default table fixes. -->
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
