@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.Graphics;
 using Android.OS;
+using Android.Provider;
 using Android.Views;
 using Android.Widget;
 using TgwsOne.Mobile;
@@ -32,6 +33,7 @@ public sealed class MainActivity : Activity
     private Button _start = null!;
     private Button _stop = null!;
     private Button _open = null!;
+    private Button _background = null!;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -88,6 +90,19 @@ public sealed class MainActivity : Activity
         _start.Click += (_, _) => StartProxy();
         _stop.Click += (_, _) => StopProxy();
         _open.Click += (_, _) => OpenTelegram();
+
+        var backgroundHint = new TextView(this)
+        {
+            Text = "Если система останавливает прокси при выключенном экране, разрешите приложению работу в фоне.",
+        };
+        backgroundHint.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 12);
+        backgroundHint.SetTextColor(Color.DarkGray);
+        backgroundHint.SetPadding(0, Dp(12), 0, Dp(4));
+        root.AddView(backgroundHint);
+
+        _background = MakeButton("Разрешить работу в фоне");
+        _background.Click += (_, _) => OpenBackgroundSettings();
+        root.AddView(_background);
 
         var caption = new TextView(this) { Text = "Журнал" };
         caption.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 14);
@@ -154,6 +169,22 @@ public sealed class MainActivity : Activity
         catch (ActivityNotFoundException)
         {
             Toast.MakeText(this, "Telegram не установлен", ToastLength.Long)?.Show();
+        }
+    }
+
+    private void OpenBackgroundSettings()
+    {
+        // App details is the screen where the user can allow background activity on the vendors that hide it
+        // better than stock Android. The app deliberately does not ask for REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
+        try
+        {
+            StartActivity(new Intent(
+                Settings.ActionApplicationDetailsSettings,
+                global::Android.Net.Uri.Parse("package:" + PackageName)));
+        }
+        catch (ActivityNotFoundException)
+        {
+            Toast.MakeText(this, "Настройки приложения недоступны", ToastLength.Long)?.Show();
         }
     }
 
