@@ -9,6 +9,7 @@ internal sealed record Outcome(int TelegramOk, bool CloudflareOk, bool SelfCheck
 internal sealed class FakeDesyncControl : IDesyncControl
 {
     public IReadOnlyList<DesyncStrategy> Rotation { get; set; } = [];
+    public IReadOnlyList<AutoHost> AutoHosts { get; set; } = [];
     public FinderBaseline Baseline { get; set; } = new(DesyncFinder.AutoId, true);
     public List<string> Applied { get; } = [];
     public int Restores { get; private set; }

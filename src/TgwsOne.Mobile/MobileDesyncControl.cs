@@ -19,10 +19,17 @@ public sealed class MobileDesyncControl(MobileEngineHost host, MobileStorage sto
         }
     }
 
+    public IReadOnlyList<AutoHost> AutoHosts
+        => host.Desync is DesyncController { IsAuto: true } live ? live.AutoHosts : [];
+
     public Task<FinderBaseline> CaptureAsync(CancellationToken ct = default)
     {
         if (host.Desync is DesyncController live)
-            return Task.FromResult(new FinderBaseline(live.Selected?.Id ?? DesyncFinder.AutoId, true));
+        {
+            string id = live.Selected?.Id ?? DesyncFinder.AutoId;
+            // «Без обхода» is how the finder and the bypass switch turn desync off: it is a selection, but not an active bypass.
+            return Task.FromResult(new FinderBaseline(id, id != DesyncFinder.NoBypassId));
+        }
 
         AndroidSettings settings = AndroidSettingsStore.Load(IniFile.Load(storage.IniPath));
         return Task.FromResult(new FinderBaseline(settings.Strategy, false));
@@ -38,6 +45,11 @@ public sealed class MobileDesyncControl(MobileEngineHost host, MobileStorage sto
             if (candidateId == DesyncFinder.NoBypassId)
             {
                 controller.Select(new DesyncStrategy(DesyncFinder.NoBypassId, []));
+                return Task.FromResult<string?>(null);
+            }
+            if (candidateId == DesyncFinder.AutoId)
+            {
+                controller.UseAuto();
                 return Task.FromResult<string?>(null);
             }
 

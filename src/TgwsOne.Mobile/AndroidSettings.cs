@@ -58,7 +58,7 @@ public static class AndroidSettingsStore
     }
 
     /// <summary><c>^[a-z0-9][a-z0-9._-]{0,31}$</c>, the same names the rotation files use.</summary>
-    private static bool IsValidProvider(string name)
+    public static bool IsValidProvider(string name)
     {
         if (name.Length is 0 or > 32) return false;
         if (!char.IsAsciiLetterLower(name[0]) && !char.IsAsciiDigit(name[0])) return false;

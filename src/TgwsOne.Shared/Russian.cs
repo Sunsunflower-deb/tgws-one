@@ -1,6 +1,6 @@
-namespace TgwsOne.Services;
+namespace TgwsOne.Core;
 
-internal static class Russian
+public static class Russian
 {
     /// <summary>The form of a noun after a number: 1 сбой, 2 сбоя, 5 сбоев; 11 to 14 are always the "many" form.</summary>
     public static string Plural(int n, string one, string few, string many)

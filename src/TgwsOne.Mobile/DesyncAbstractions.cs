@@ -21,6 +21,9 @@ public interface IDesyncControl
     /// <summary>The current operator's rotation, in order.</summary>
     IReadOnlyList<DesyncStrategy> Rotation { get; }
 
+    /// <summary>What <c>Авто</c> has chosen for each host so far; empty unless it is the selection.</summary>
+    IReadOnlyList<AutoHost> AutoHosts { get; }
+
     /// <summary>The strategy and whether the bypass is on, as they are now.</summary>
     Task<FinderBaseline> CaptureAsync(CancellationToken ct = default);
 

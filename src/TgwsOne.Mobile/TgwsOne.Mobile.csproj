@@ -13,4 +13,9 @@
     <ProjectReference Include="..\TgwsOne.Engine\TgwsOne.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The same MVVM toolkit (MIT) the desktop view-models use: observable properties and relay commands. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
 </Project>

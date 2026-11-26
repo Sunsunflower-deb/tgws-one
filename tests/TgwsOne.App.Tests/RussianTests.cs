@@ -1,4 +1,4 @@
-using TgwsOne.Services;
+using TgwsOne.Core;
 
 namespace TgwsOne.Tests;
 

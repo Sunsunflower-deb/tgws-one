@@ -9,13 +9,28 @@ internal sealed class FakeEngineControl : IProxyEngineControl
                                                           PortBusyByOther: false, Pid: 4242);
     public bool RestartIsNeeded { get; set; }
 
+    public EngineStartResult NextStart { get; set; } = new(EngineStartOutcome.Started, 1443);
+    public Exception? StartThrows { get; set; }
+    public Func<EngineProxyStatus>? OnGetStatus { get; set; }
+    public int Starts { get; private set; }
+    public int Stops { get; private set; }
+
     public Task<EngineStartResult> StartAsync(CancellationToken ct = default)
-        => Task.FromResult(new EngineStartResult(EngineStartOutcome.Started, Status.Port));
+    {
+        Starts++;
+        if (StartThrows is { } ex) throw ex;
+        if (NextStart.Ok) Status = new EngineProxyStatus(true, true, NextStart.Port, PortBusyByOther: false, Pid: 4242);
+        return Task.FromResult(NextStart);
+    }
 
     public Task<EngineStopOutcome> StopAsync(CancellationToken ct = default)
-        => Task.FromResult(EngineStopOutcome.Stopped);
+    {
+        Stops++;
+        Status = new EngineProxyStatus(false, false, 0, PortBusyByOther: false, Pid: null);
+        return Task.FromResult(EngineStopOutcome.Stopped);
+    }
 
-    public EngineProxyStatus GetStatus() => Status;
+    public EngineProxyStatus GetStatus() => OnGetStatus?.Invoke() ?? Status;
     public bool RestartNeeded() => RestartIsNeeded;
 }
 
