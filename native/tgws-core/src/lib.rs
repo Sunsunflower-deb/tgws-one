@@ -14,6 +14,7 @@
 
 pub mod config;
 pub mod ffi;
+pub mod mtproto;
 pub mod net;
 pub mod proto;
 pub mod settings;
