@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/TgwsOne.Core/TgwsOne.Core.csproj" />
     <Project Path="src/TgwsOne.Engine/TgwsOne.Engine.csproj" />
+    <Project Path="src/TgwsOne.Mobile/TgwsOne.Mobile.csproj" />
     <Project Path="src/TgwsOne.Shared/TgwsOne.Shared.csproj" />
     <Project Path="src/TgwsOne/TgwsOne.csproj" />
   </Folder>
@@ -11,5 +12,6 @@
     <Project Path="tests/TgwsOne.App.Tests/TgwsOne.App.Tests.csproj" />
     <Project Path="tests/TgwsOne.Core.Tests/TgwsOne.Core.Tests.csproj" />
     <Project Path="tests/TgwsOne.Engine.Tests/TgwsOne.Engine.Tests.csproj" />
+    <Project Path="tests/TgwsOne.Mobile.Tests/TgwsOne.Mobile.Tests.csproj" />
   </Folder>
 </Solution>

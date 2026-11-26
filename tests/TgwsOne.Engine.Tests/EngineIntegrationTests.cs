@@ -20,20 +20,7 @@ public class EngineIntegrationTests
         using var telegram = new FakeTelegram();
         int port = Ports.Free();
 
-        var config = new EngineConfig
-        {
-            Host = "127.0.0.1",
-            Port = port,
-            Secret = SecretHex,
-            DcRedirects = new Dictionary<int, string> { [2] = "127.0.0.1" },
-            PoolSize = 0,
-            FallbackCfProxy = false,
-            CfproxyH2Media = false,
-            CfproxyUserDomains = ["example.test"],
-            LogFile = Path.Combine(temp.Root, "proxy.log"),
-            TcpFallbackPort = telegram.Port,
-            TcpFallbackHostOverride = "127.0.0.1",
-        };
+        EngineConfig config = FakeTelegramConfig(temp, port, telegram);
         await using var engine = new ProxyEngine(config);
         await engine.StartAsync(CancellationToken.None);
         try
@@ -118,6 +105,52 @@ public class EngineIntegrationTests
             await engine.StopAsync();
         }
     }
+
+    [Fact]
+    public async Task SelfCheck_AgainstFakeTelegram_ReportsSuccessAndTheReply()
+    {
+        using var temp = new TempPaths();
+        using var telegram = new FakeTelegram();
+
+        EngineSelfCheckResult result = await EngineSelfCheck.ExchangeAsync(
+            FakeTelegramConfig(temp, Ports.Free(), telegram), dcIdx: 2);
+
+        Assert.True(result.Ok, result.Failure);
+        Assert.NotNull(result.Reply);
+        Assert.Equal(telegram.Packet.AsSpan(4).ToArray(), result.Reply);
+        Assert.True(result.Elapsed > TimeSpan.Zero);
+        Assert.Equal(2, telegram.DcIdx);
+    }
+
+    [Fact]
+    public async Task SelfCheck_WithTheWrongSecret_ReportsFailure()
+    {
+        using var temp = new TempPaths();
+        using var telegram = new FakeTelegram();
+
+        EngineSelfCheckResult result = await EngineSelfCheck.ExchangeAsync(
+            FakeTelegramConfig(temp, Ports.Free(), telegram), dcIdx: 2,
+            clientSecretHex: "ffffffffffffffffffffffffffffffff", timeout: TimeSpan.FromSeconds(2));
+
+        Assert.False(result.Ok);
+        Assert.NotNull(result.Failure);
+        Assert.Null(result.Reply);
+    }
+
+    private static EngineConfig FakeTelegramConfig(TempPaths temp, int port, FakeTelegram telegram) => new()
+    {
+        Host = "127.0.0.1",
+        Port = port,
+        Secret = SecretHex,
+        DcRedirects = new Dictionary<int, string> { [2] = "127.0.0.1" },
+        PoolSize = 0,
+        FallbackCfProxy = false,
+        CfproxyH2Media = false,
+        CfproxyUserDomains = ["example.test"],
+        LogFile = Path.Combine(temp.Root, "proxy.log"),
+        TcpFallbackPort = telegram.Port,
+        TcpFallbackHostOverride = "127.0.0.1",
+    };
 
     private sealed class FakeTelegram : IDisposable
     {

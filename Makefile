@@ -65,6 +65,7 @@ test:
 	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,,)
 	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,,)
 	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Mobile.Tests,,)
 
 test-engine:
 	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
