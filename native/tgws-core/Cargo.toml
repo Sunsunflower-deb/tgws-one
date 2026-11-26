@@ -25,6 +25,10 @@ aes-gcm = "0.10"
 chacha20poly1305 = "0.10"
 # X25519 key agreement for the key_share extension (RFC 8446 §4.2.8).
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+# SHA-1 for the Sec-WebSocket-Accept handshake check (RFC 6455 §4.1).
+sha1 = "0.10"
+# Base64 for Sec-WebSocket-Key and Sec-WebSocket-Accept (RFC 6455 §4.1).
+base64 = "0.22"
 
 [dev-dependencies]
 libc = "0.2"

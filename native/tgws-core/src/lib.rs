@@ -22,6 +22,7 @@ pub mod strategy;
 pub mod tcp;
 pub mod tls;
 pub mod tls13;
+pub mod ws;
 pub mod zapret;
 
 pub use ffi::tgws_core_version;
