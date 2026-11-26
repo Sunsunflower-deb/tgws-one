@@ -23,6 +23,7 @@ public sealed class DesyncController : IDesyncController
     private readonly int _maxFailures;
     private readonly TimeSpan _failureWindow;
     private IReadOnlyList<DesyncStrategy> _rotation;
+    private string _operator = DesyncRotations.Universal;
 
     /// <param name="rotation">The set <c>auto</c> walks; the first entry is where every host starts.</param>
     /// <param name="timeProvider">The clock the failure window is measured with; tests move a fake one.</param>
@@ -44,6 +45,12 @@ public sealed class DesyncController : IDesyncController
 
     /// <summary>True when no explicit strategy is selected and the rotation decides per host.</summary>
     public bool IsAuto => Selected is null;
+
+    /// <summary>The operator whose rotation <c>auto</c> walks; <see cref="DesyncRotations.Universal"/> by default.</summary>
+    public string Operator
+    {
+        get { lock (_gate) return _operator; }
+    }
 
     /// <summary>The set <c>auto</c> walks for the current operator, in order.</summary>
     public IReadOnlyList<DesyncStrategy> Rotation
@@ -102,6 +109,28 @@ public sealed class DesyncController : IDesyncController
         }
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Selects the operator whose shipped rotation <c>auto</c> walks. Unknown, empty and unreadable names fall back
+    /// to the universal set, so a wrong MCC/MNC lookup can only cost tuning, never the bypass itself.
+    /// </summary>
+    public void SetOperator(string? operatorName)
+    {
+        string canonical = DesyncRotations.CanonicalOperator(operatorName);
+        IReadOnlyList<DesyncStrategy> rotation = DesyncRotations.ForOperator(canonical);
+        lock (_gate)
+        {
+            if (_operator == canonical && SameRotation(_rotation, rotation)) return;
+            _operator = canonical;
+            _rotation = Snapshot(rotation);
+            _hosts.Clear();
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>Selects the operator from the device's MCC/MNC; an unknown code means the universal set.</summary>
+    public void SetOperatorFromMccMnc(string? mccMnc)
+        => SetOperator(DesyncRotations.OperatorForMccMnc(mccMnc));
 
     public DesyncStrategy? Resolve(string sni, string route)
     {
@@ -176,6 +205,14 @@ public sealed class DesyncController : IDesyncController
 
     private static IReadOnlyList<DesyncStrategy> Snapshot(IReadOnlyList<DesyncStrategy> rotation)
         => rotation.Count == 0 ? [] : [.. rotation];
+
+    private static bool SameRotation(IReadOnlyList<DesyncStrategy> left, IReadOnlyList<DesyncStrategy> right)
+    {
+        if (left.Count != right.Count) return false;
+        for (int i = 0; i < left.Count; i++)
+            if (!string.Equals(left[i].Id, right[i].Id, StringComparison.Ordinal)) return false;
+        return true;
+    }
 
     private sealed class HostState
     {

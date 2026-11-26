@@ -1,0 +1,6 @@
+# <MCC><MNC> <operator>; Russian networks taken from the Wikipedia list of European mobile operators
+# (https://en.wikipedia.org/wiki/List_of_mobile_network_operators_of_Europe#Russia).
+25001 mts
+25002 megafon
+25020 tele2
+25099 beeline

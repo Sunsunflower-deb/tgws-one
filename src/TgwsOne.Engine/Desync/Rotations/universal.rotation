@@ -1,0 +1,9 @@
+# Universal rotation: every strategy the engine ships with, in the order of the plan table.
+fake
+split-sni
+split-midsni
+fake-split
+disorder-1
+disorder-sld
+oob-sni
+tlsrec-midsni

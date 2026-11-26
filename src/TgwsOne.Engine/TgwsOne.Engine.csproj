@@ -17,4 +17,12 @@
     <ProjectReference Include="..\TgwsOne.Shared\TgwsOne.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Operator rotations travel with the engine: the mobile app has no strategies folder to read at runtime. -->
+    <EmbeddedResource Include="Desync/Rotations/*.rotation"
+                      LogicalName="TgwsOne.Engine.Desync.Rotations.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Desync/Rotations/mcc-mnc.txt"
+                      LogicalName="TgwsOne.Engine.Desync.Rotations.mcc-mnc.txt" />
+  </ItemGroup>
+
 </Project>
