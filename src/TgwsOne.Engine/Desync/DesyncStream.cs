@@ -21,6 +21,7 @@ public sealed class DesyncStream : Stream
     private readonly Socket _socket;
     private readonly ISocketTricks _tricks;
     private readonly int _systemTtl;
+    private readonly FakeSpliceSender _fakeSender;
     private readonly DesyncStrategy? _strategy;
     private readonly Action<string>? _log;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
@@ -51,6 +52,7 @@ public sealed class DesyncStream : Stream
         _strategy = strategy;
         _log = log;
         _lifetimeToken = _lifetime.Token;
+        _fakeSender = new FakeSpliceSender(socket, tricks, systemTtl);
         Capabilities =
             (tricks.SupportsLowTtl ? DesyncCapabilities.LowTtl : DesyncCapabilities.None) |
             (tricks.SupportsSpliceFake ? DesyncCapabilities.SpliceFake : DesyncCapabilities.None) |
@@ -59,6 +61,9 @@ public sealed class DesyncStream : Stream
 
     /// <summary>The primitives this stream may use, derived from <see cref="ISocketTricks"/>.</summary>
     public DesyncCapabilities Capabilities { get; }
+
+    /// <summary>The fake sender and its retained retransmission pages; exposed so tests can inspect them.</summary>
+    internal FakeSpliceSender FakeSender => _fakeSender;
 
     public override bool CanRead => _inner.CanRead;
     public override bool CanSeek => false;
@@ -171,13 +176,23 @@ public sealed class DesyncStream : Stream
             return;
         }
 
-        await ExecutePlanAsync(plan, ct).ConfigureAwait(false);
+        // A fake segment's offset points into the buffer the planner sliced; record cuts may have rebuilt it, and
+        // its real bytes are what the gift pages must hold after the fake is sent.
+        ReadOnlyMemory<byte> source = firstFlight;
+        foreach (DesyncSegment segment in plan.Segments)
+        {
+            if (segment.Mode != DesyncSegmentMode.FakeSplice) continue;
+            source = PlannedFirstFlight.Recover(_strategy, layout, firstFlight, Capabilities);
+            break;
+        }
+
+        await ExecutePlanAsync(plan, source, ct).ConfigureAwait(false);
     }
 
     private static bool LooksLikeClientHello(ReadOnlySpan<byte> flight)
         => flight.Length >= 2 && flight[0] == 0x16 && flight[1] == 0x03;
 
-    private async ValueTask ExecutePlanAsync(DesyncPlan plan, CancellationToken ct)
+    private async ValueTask ExecutePlanAsync(DesyncPlan plan, ReadOnlyMemory<byte> source, CancellationToken ct)
     {
         foreach (DesyncSegment segment in plan.Segments)
         {
@@ -197,10 +212,7 @@ public sealed class DesyncStream : Stream
                     break;
 
                 case DesyncSegmentMode.FakeSplice:
-                    // E2.5 replaces this with the vmsplice/splice sender. Until then the segment's bytes still have
-                    // to reach the server, so they go out as a normal write.
-                    LogRateLimited($"desync: fake splice is not implemented yet; sending {segment.Length} byte(s) normally");
-                    await _inner.WriteAsync(segment.Bytes, ct).ConfigureAwait(false);
+                    await SendFakeSpliceAsync(segment, source, ct).ConfigureAwait(false);
                     break;
 
                 default:
@@ -252,6 +264,36 @@ public sealed class DesyncStream : Stream
 
         LogRateLimited($"desync: urgent byte was not sent; writing {bytes.Length} byte(s) normally");
         await _inner.WriteAsync(bytes, ct).ConfigureAwait(false);
+    }
+
+    private async ValueTask SendFakeSpliceAsync(DesyncSegment segment, ReadOnlyMemory<byte> source,
+                                                CancellationToken ct)
+    {
+        if (segment.Offset < 0 || segment.Length <= 0 || segment.Offset > source.Length - segment.Length)
+        {
+            // The planner produced a range the recovered buffer does not have; writing the placeholder would put
+            // zeros on the wire, so the safe fallback is to leave the bytes to the normal segments around it.
+            LogRateLimited($"desync: fake range {segment.Offset}+{segment.Length} is outside the first flight");
+            return;
+        }
+
+        ReadOnlyMemory<byte> real = source.Slice(segment.Offset, segment.Length);
+        if (!_tricks.SupportsSpliceFake || _systemTtl < 1)
+        {
+            LogRateLimited("desync: fake splice is unavailable; sending the segment normally");
+            await _inner.WriteAsync(real, ct).ConfigureAwait(false);
+            return;
+        }
+
+        string sni = string.IsNullOrWhiteSpace(segment.FakeSni) ? FakeClientHello.DefaultSni : segment.FakeSni;
+        int ttl = segment.FakeTtl is > 0 and < 256 ? segment.FakeTtl.Value : FakeSpliceSender.DefaultFakeTtl;
+
+        bool sent = _fakeSender.TrySend(sni, real, ttl, out string? failure);
+        if (!sent)
+        {
+            LogRateLimited($"desync: fake splice failed ({failure}); sending the segment normally");
+            await _inner.WriteAsync(real, ct).ConfigureAwait(false);
+        }
     }
 
     private bool TrySetTtl(int ttl)
@@ -312,6 +354,9 @@ public sealed class DesyncStream : Stream
             {
                 // Disposing a socket that the peer already reset is not an error for the caller.
             }
+
+            // The socket is closed by now, so no retransmission can still read the gift pages.
+            _fakeSender.Dispose();
         }
 
         base.Dispose(disposing);
@@ -330,6 +375,8 @@ public sealed class DesyncStream : Stream
             {
                 // Same as the synchronous path.
             }
+
+            _fakeSender.Dispose();
         }
 
         GC.SuppressFinalize(this);
