@@ -1,0 +1,18 @@
+[package]
+name = "tgws-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Native core for TgwsOne: own TLS/TCP stack and DPI evasion primitives"
+repository = "https://github.com/tgws-one/tgws-one"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+libc = "0.2"
