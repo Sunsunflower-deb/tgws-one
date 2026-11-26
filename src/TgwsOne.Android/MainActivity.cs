@@ -8,6 +8,7 @@ using TgwsOne.Engine;
 using TgwsOne.Engine.Desync;
 using TgwsOne.Mobile;
 using TgwsOne.Mobile.Views;
+using AndroidLog = Android.Util.Log;
 
 namespace TgwsOne.Android;
 
@@ -52,8 +53,9 @@ public sealed class MainActivity : AvaloniaMainActivity
         var settings = new FileMobileSettings(storage);
         var proxy = new ServiceProxyControl(this);
         var desync = new RuntimeDesyncControl(storage);
-        var launcher = new NullLauncher();
+        var launcher = new AndroidLauncher(this);
         var clipboard = new AndroidClipboard(this);
+        var share = new AndroidShare(this);
         var probes = new MobileEgressProbes(storage, desync,
             (timeout, ct) => EngineRuntime.SelfCheckAsync(timeout, ct));
 
@@ -65,7 +67,7 @@ public sealed class MainActivity : AvaloniaMainActivity
             new Diagnostics(proxy, desync, probes, () => true, () => EngineRuntime.ActiveConnections), actions);
         var logs = new LogsViewModel(LogsViewModel.DefaultTabs(storage), new SystemTicker(), clipboard, launcher);
         var settingsPage = new SettingsViewModel(settings);
-        var connect = new ConnectViewModel(settings, launcher, clipboard);
+        var connect = new ConnectViewModel(settings, launcher, clipboard, share);
 
         ISharedPreferences? preferences = GetSharedPreferences(UiPreferences, FileCreationMode.Private);
         bool firstRun = preferences?.GetBoolean(WelcomeDoneKey, false) != true;
@@ -233,7 +235,7 @@ public sealed class MainActivity : AvaloniaMainActivity
     }
 
     private sealed class ShellDiagnosticsActions(ServiceProxyControl proxy, RuntimeDesyncControl desync,
-                                                  FileMobileSettings settings, ILauncher launcher)
+                                                  FileMobileSettings settings, AndroidLauncher launcher)
         : IDiagnosticsActions
     {
         public MobileShellViewModel? Shell { get; set; }
@@ -266,10 +268,26 @@ public sealed class MainActivity : AvaloniaMainActivity
             => Task.FromResult<string?>("Свободный порт выбирается при запуске; отдельной смены порта на телефоне нет.");
     }
 
-    /// <summary>Until E5.3 wires the real <c>tg://</c> intent, the page explains that the link could not be opened.</summary>
-    private sealed class NullLauncher : ILauncher
+    private sealed class AndroidLauncher(MainActivity activity) : ILauncher
     {
-        public Task<bool> OpenAsync(string url) => Task.FromResult(false);
+        public Task<bool> OpenAsync(string url)
+        {
+            try
+            {
+                if (!url.StartsWith("tg:", StringComparison.OrdinalIgnoreCase))
+                    return Task.FromResult(false);
+
+                var intent = new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(url));
+                intent.AddFlags(ActivityFlags.NewTask);
+                activity.StartActivity(intent);
+                return Task.FromResult(true);
+            }
+            catch (ActivityNotFoundException)
+            {
+                Toast.MakeText(activity, "Telegram не установлен", ToastLength.Long)?.Show();
+                return Task.FromResult(false);
+            }
+        }
     }
 
     private sealed class AndroidClipboard(MainActivity activity) : IClipboardService
@@ -278,6 +296,27 @@ public sealed class MainActivity : AvaloniaMainActivity
         {
             var manager = (ClipboardManager?)activity.GetSystemService(Context.ClipboardService);
             if (manager is not null) manager.PrimaryClip = ClipData.NewPlainText("TgwsOne", text);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class AndroidShare(MainActivity activity) : IShareService
+    {
+        public Task ShareAsync(string text)
+        {
+            try
+            {
+                var send = new Intent(Intent.ActionSend);
+                send.SetType("text/plain");
+                send.PutExtra(Intent.ExtraText, text);
+                Intent chooser = Intent.CreateChooser(send, "Поделиться ссылкой")!;
+                chooser.AddFlags(ActivityFlags.NewTask);
+                activity.StartActivity(chooser);
+            }
+            catch (ActivityNotFoundException ex)
+            {
+                AndroidLog.Warn("TgwsOne", "share failed: " + ex.Message);
+            }
             return Task.CompletedTask;
         }
     }
