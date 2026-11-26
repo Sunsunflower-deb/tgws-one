@@ -12,12 +12,14 @@
 
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+pub mod config;
 pub mod ffi;
 pub mod net;
 pub mod settings;
 pub mod strategy;
 pub mod tcp;
 pub mod tls;
+pub mod zapret;
 
 pub use ffi::tgws_core_version;
 pub use net::telegram_network::{DC_DEFAULT_IPS, DC_TEST_IPS, WS_PATH, WS_PATH_TEST, ws_domains};
