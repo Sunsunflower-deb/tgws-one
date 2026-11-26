@@ -89,6 +89,7 @@ public sealed class RawWebSocket : IAsyncDisposable
 
         Socket? socket = null;
         Stream? egressStream = null;
+        EgressStage stage = EgressStage.Connect;
         try
         {
             Stream stream;
@@ -117,6 +118,9 @@ public sealed class RawWebSocket : IAsyncDisposable
                 stream = egressStream;
             }
 
+            // From here on a failure belongs to TLS, then to the HTTP upgrade; only the stage, not the exception type,
+            // can tell a connect timeout from a TLS timeout.
+            stage = secure ? EgressStage.Tls : EgressStage.Upgrade;
             if (secure)
             {
                 var ssl = new SslStream(stream, leaveInnerStreamOpen: false, ValidateCertificate(sni is null));
@@ -130,6 +134,7 @@ public sealed class RawWebSocket : IAsyncDisposable
                 stream = ssl;
             }
 
+            stage = EgressStage.Upgrade;
             string key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
             string request =
                 $"GET {path} HTTP/1.1\r\n" +
@@ -176,18 +181,39 @@ public sealed class RawWebSocket : IAsyncDisposable
             }
             throw new WsHandshakeException(status, firstLine, headers);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            socket?.Dispose();
-            DisposeEgressStream(egressStream);
-            throw new TimeoutException($"WebSocket connect to {host} timed out");
-        }
-        catch
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             socket?.Dispose();
             DisposeEgressStream(egressStream);
             throw;
         }
+        catch (OperationCanceledException)
+        {
+            socket?.Dispose();
+            DisposeEgressStream(egressStream);
+            var timedOut = new TimeoutException($"WebSocket connect to {host} timed out");
+            (EgressFailure failure, EgressStage failedStage) = EgressErrors.Classify(timedOut, stage);
+            throw WrapEgressFailure(failure, failedStage, timedOut, egress);
+        }
+        catch (Exception ex)
+        {
+            socket?.Dispose();
+            DisposeEgressStream(egressStream);
+            (EgressFailure failure, EgressStage failedStage) = EgressErrors.Classify(ex, stage);
+            throw WrapEgressFailure(failure, failedStage, ex, egress);
+        }
+    }
+
+    /// <summary>
+    /// The plain path (no <see cref="IEgress"/>) keeps its historic exceptions, because the desktop must not change.
+    /// With an egress the failure is typed, so a pool or the controller can classify it without parsing messages.
+    /// </summary>
+    private static Exception WrapEgressFailure(EgressFailure failure, EgressStage stage, Exception inner,
+                                               IEgress? egress)
+    {
+        if (inner is EgressException) return inner;
+        if (egress is null) return inner;
+        return new EgressException(failure, stage, inner);
     }
 
     private static void DisposeEgressStream(Stream? stream)

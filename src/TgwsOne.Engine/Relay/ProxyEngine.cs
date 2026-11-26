@@ -53,7 +53,7 @@ public sealed class ProxyEngine : IAsyncDisposable
         _config = config;
         _log = log ?? new EngineLog(config.Verbose, config.LogFile, config.LogMaxMb, config.LogBackups);
         _secret = Convert.FromHexString(config.Secret);
-        _egress = desync is null ? null : new DesyncEgress(desync, _log.Warn);
+        _egress = desync is null ? null : new DesyncEgress(desync, _log.Warn, stats: _stats);
         _wsPool = new WebSocketPool(config, _log, _stats, _egress);
         _cfWorkerPool = new CfWorkerPool(config, _log, _stats, _egress);
         _refresher = new CfDomainRefresher(_balancer, _log, config.CfproxyUserDomains);

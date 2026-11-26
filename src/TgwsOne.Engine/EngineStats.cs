@@ -1,3 +1,5 @@
+using TgwsOne.Engine.Desync;
+
 namespace TgwsOne.Engine;
 
 /// <summary>The counters the upstream engine printed once a minute, made thread-safe (one task per client).</summary>
@@ -6,7 +8,8 @@ public sealed class EngineStats
     private long _connectionsTotal, _connectionsActive, _connectionsWs, _connectionsH2, _h2TcpConnections,
         _h2Requests, _h2Errors, _connectionsTcpFallback, _connectionsCfproxy, _connectionsFronting,
         _connectionsBad, _connectionsMasked, _wsErrors, _bytesUp, _bytesDown, _poolHits, _poolMisses,
-        _cfPoolHits, _cfPoolMisses;
+        _cfPoolHits, _cfPoolMisses, _egressAttempts, _egressOk, _egressConnectTimeout, _egressConnectRefused,
+        _egressTlsTimeout, _egressTlsReset, _egressTlsAlert, _egressUpgradeRejected, _egressIo, _egressUnsupported;
 
     public long ConnectionsTotal => Interlocked.Read(ref _connectionsTotal);
     public long ConnectionsActive => Interlocked.Read(ref _connectionsActive);
@@ -31,6 +34,36 @@ public sealed class EngineStats
     public void CfPoolHit() => Interlocked.Increment(ref _cfPoolHits);
     public void CfPoolMiss() => Interlocked.Increment(ref _cfPoolMisses);
 
+    public void EgressAttempt() => Interlocked.Increment(ref _egressAttempts);
+    public void EgressSuccess() => Interlocked.Increment(ref _egressOk);
+
+    public void EgressFailed(EgressFailure failure)
+    {
+        switch (failure)
+        {
+            case EgressFailure.ConnectTimeout: Interlocked.Increment(ref _egressConnectTimeout); break;
+            case EgressFailure.ConnectRefused: Interlocked.Increment(ref _egressConnectRefused); break;
+            case EgressFailure.TlsTimeout: Interlocked.Increment(ref _egressTlsTimeout); break;
+            case EgressFailure.TlsReset: Interlocked.Increment(ref _egressTlsReset); break;
+            case EgressFailure.TlsAlert: Interlocked.Increment(ref _egressTlsAlert); break;
+            case EgressFailure.UpgradeRejected: Interlocked.Increment(ref _egressUpgradeRejected); break;
+            case EgressFailure.Io: Interlocked.Increment(ref _egressIo); break;
+            case EgressFailure.Unsupported: Interlocked.Increment(ref _egressUnsupported); break;
+            // None is not a failure; counting it separately would double the success counter.
+        }
+    }
+
+    public long EgressAttempts => Interlocked.Read(ref _egressAttempts);
+    public long EgressOk => Interlocked.Read(ref _egressOk);
+    public long EgressConnectTimeout => Interlocked.Read(ref _egressConnectTimeout);
+    public long EgressConnectRefused => Interlocked.Read(ref _egressConnectRefused);
+    public long EgressTlsTimeout => Interlocked.Read(ref _egressTlsTimeout);
+    public long EgressTlsReset => Interlocked.Read(ref _egressTlsReset);
+    public long EgressTlsAlert => Interlocked.Read(ref _egressTlsAlert);
+    public long EgressUpgradeRejected => Interlocked.Read(ref _egressUpgradeRejected);
+    public long EgressIo => Interlocked.Read(ref _egressIo);
+    public long EgressUnsupported => Interlocked.Read(ref _egressUnsupported);
+
     public string Summary()
     {
         long poolTotal = PoolHits + PoolMisses;
@@ -44,7 +77,8 @@ public sealed class EngineStats
                $"tcp_fb={Interlocked.Read(ref _connectionsTcpFallback)} cf={Interlocked.Read(ref _connectionsCfproxy)} " +
                $"front={Interlocked.Read(ref _connectionsFronting)} bad={Interlocked.Read(ref _connectionsBad)} " +
                $"masked={Interlocked.Read(ref _connectionsMasked)} err={Interlocked.Read(ref _wsErrors)} " +
-               $"pool={pool} cf_pool={cfPool} up={HumanBytes(Interlocked.Read(ref _bytesUp))} " +
+               $"pool={pool} cf_pool={cfPool} egress={Interlocked.Read(ref _egressOk)}/" +
+               $"{Interlocked.Read(ref _egressAttempts)} up={HumanBytes(Interlocked.Read(ref _bytesUp))} " +
                $"down={HumanBytes(Interlocked.Read(ref _bytesDown))}";
     }
 
