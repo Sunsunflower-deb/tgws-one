@@ -1,6 +1,7 @@
 using AndroidLog = Android.Util.Log;
 using TgwsOne.Core;
 using TgwsOne.Engine;
+using TgwsOne.Engine.Desync;
 using TgwsOne.Engine.Relay;
 using TgwsOne.Mobile;
 
@@ -17,6 +18,7 @@ internal static class EngineRuntime
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static ProxyEngine? _engine;
     private static EngineLog? _engineLog;
+    private static DesyncController? _desync;
     private static AppLog? _appLog;
     private static string? _link;
     private static string? _error;
@@ -31,7 +33,8 @@ internal static class EngineRuntime
     public static string? Link => _link;
     public static string? Error => _error;
 
-    public static async Task StartAsync(string filesDirectory, CancellationToken ct = default)
+    public static async Task StartAsync(string filesDirectory, string? operatorMccMnc = null,
+                                        CancellationToken ct = default)
     {
         await Gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -47,11 +50,15 @@ internal static class EngineRuntime
             IniFile ini = IniFile.Load(storage.IniPath);
             ProxySettingsStore.EnsureSecret(ini, _appLog);
             ProxySettings settings = ProxySettingsStore.Load(ini);
+            AndroidSettings android = AndroidSettingsStore.Load(ini);
 
-            EngineConfig config = ToEngineConfig(settings, storage.ProxyLogPath);
+            EngineConfig config = ToEngineConfig(settings, storage.ProxyLogPath, android);
+            DesyncController desync = CreateDesync(android, operatorMccMnc);
+            _appLog.Write($"пул: простой {config.PoolIdleSeconds} c; оператор {desync.Operator}");
+            AndroidLog.Info(LogTag, $"pool idle {config.PoolIdleSeconds}s; operator {desync.Operator}");
             var log = new EngineLog(settings.Verbose, storage.ProxyLogPath, settings.LogMaxMb, 1, console: false);
             log.Line += OnEngineLine;
-            var engine = new ProxyEngine(config, log);
+            var engine = new ProxyEngine(config, log, desync);
             try
             {
                 await engine.StartAsync(ct).ConfigureAwait(false);
@@ -65,6 +72,7 @@ internal static class EngineRuntime
             }
 
             _engineLog = log;
+            _desync = desync;
             _engine = engine;
             _link = engine.TelegramLink();
             _appLog.Write("движок запущен: " + _link);
@@ -101,12 +109,23 @@ internal static class EngineRuntime
     /// <summary>For <c>Service.OnDestroy</c>, which cannot await: the teardown is short and must finish before the process may die.</summary>
     public static void StopBlocking() => StopAsync().GetAwaiter().GetResult();
 
+    public static void OnNetworkChanged(string? operatorMccMnc)
+    {
+        DesyncController? desync = _desync;
+        desync?.SetOperatorFromMccMnc(operatorMccMnc);
+        string operatorName = desync?.Operator ?? DesyncRotations.Universal;
+        _appLog?.Write("сеть сменилась; оператор " + operatorName);
+        AndroidLog.Info(LogTag, "network changed; operator " + operatorName);
+        _engine?.OnNetworkChanged();
+    }
+
     private static async Task StopCoreAsync()
     {
         ProxyEngine? engine = _engine;
         EngineLog? log = _engineLog;
         _engine = null;
         _engineLog = null;
+        _desync = null;
         _link = null;
 
         if (engine is not null)
@@ -136,8 +155,19 @@ internal static class EngineRuntime
         try { Line?.Invoke(line); } catch { /* a faulty subscriber must not break the engine */ }
     }
 
+    private static DesyncController CreateDesync(AndroidSettings android, string? operatorMccMnc)
+    {
+        var controller = new DesyncController();
+        controller.SetOperatorFromMccMnc(operatorMccMnc);
+        if (android.Strategy != AndroidSettings.DefaultStrategy && BuiltInDesync.Find(android.Strategy) is { } strategy)
+            controller.Select(strategy);
+        else
+            controller.UseAuto();
+        return controller;
+    }
+
     // The same mapping EngineConfigFactory applies on the desktop; Core is not available to an Android build.
-    private static EngineConfig ToEngineConfig(ProxySettings s, string logFile) => new()
+    private static EngineConfig ToEngineConfig(ProxySettings s, string logFile, AndroidSettings android) => new()
     {
         Host = s.Host.ToString(),
         Port = s.Port,
@@ -145,6 +175,7 @@ internal static class EngineRuntime
         DcRedirects = s.DcMap.ToDictionary(d => d.Dc, d => d.Ip.ToString()),
         BufferSize = Math.Max(4, s.BufKb) * 1024,
         PoolSize = Math.Max(0, s.PoolSize),
+        PoolIdleSeconds = android.PoolIdle,
         FallbackCfProxy = s.CfProxy,
         CfproxyUserDomains = s.CfDomains,
         CfproxyWorkerDomains = s.WorkerDomains,

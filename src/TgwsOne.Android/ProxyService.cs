@@ -2,7 +2,9 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.Graphics.Drawables;
+using Android.Net;
 using Android.OS;
+using Android.Telephony;
 using AndroidLog = Android.Util.Log;
 
 namespace TgwsOne.Android;
@@ -22,6 +24,12 @@ public sealed class ProxyService : Service
     private const string ChannelId = "proxy";
     private const int NotificationId = 1443;
 
+    private readonly object _networkGate = new();
+    private ConnectivityManager? _connectivity;
+    private TelephonyManager? _telephony;
+    private ConnectivityManager.NetworkCallback? _networkCallback;
+    private Network? _currentNetwork;
+
     public static void Start(Context context) =>
         context.StartForegroundService(new Intent(context, typeof(ProxyService)));
 
@@ -32,6 +40,7 @@ public sealed class ProxyService : Service
     {
         base.OnCreate();
         CreateChannel();
+        RegisterNetworkCallback();
         EngineRuntime.Changed += OnRuntimeChanged;
     }
 
@@ -59,7 +68,7 @@ public sealed class ProxyService : Service
         {
             try
             {
-                await EngineRuntime.StartAsync(FilesDir!.AbsolutePath);
+                await EngineRuntime.StartAsync(FilesDir!.AbsolutePath, CurrentOperatorMccMnc());
                 UpdateNotification();
             }
             catch (Exception ex)
@@ -77,6 +86,7 @@ public sealed class ProxyService : Service
 
     public override void OnDestroy()
     {
+        UnregisterNetworkCallback();
         EngineRuntime.Changed -= OnRuntimeChanged;
         try
         {
@@ -90,6 +100,76 @@ public sealed class ProxyService : Service
     }
 
     public override IBinder? OnBind(Intent? intent) => null;
+
+    private void RegisterNetworkCallback()
+    {
+        _connectivity = GetSystemService(ConnectivityService) as ConnectivityManager;
+        _telephony = GetSystemService(TelephonyService) as TelephonyManager;
+        if (_connectivity is null) return;
+
+        _networkCallback = new DefaultNetworkCallback(this);
+        try
+        {
+            _connectivity.RegisterDefaultNetworkCallback(_networkCallback);
+        }
+        catch (Exception ex)
+        {
+            AndroidLog.Warn("TgwsOne", "network callback registration: " + ex.Message);
+        }
+    }
+
+    private void UnregisterNetworkCallback()
+    {
+        if (_networkCallback is null) return;
+        try
+        {
+            _connectivity?.UnregisterNetworkCallback(_networkCallback);
+        }
+        catch (Exception ex)
+        {
+            AndroidLog.Warn("TgwsOne", "network callback removal: " + ex.Message);
+        }
+        _networkCallback = null;
+    }
+
+    private string? CurrentOperatorMccMnc(Network? network = null)
+    {
+        network ??= _connectivity?.ActiveNetwork;
+        if (network is null) return null;
+        NetworkCapabilities? capabilities = _connectivity?.GetNetworkCapabilities(network);
+        if (capabilities?.HasTransport(TransportType.Cellular) != true) return null;
+        string? mccMnc = _telephony?.NetworkOperator;
+        return string.IsNullOrWhiteSpace(mccMnc) ? null : mccMnc;
+    }
+
+    private void OnDefaultNetworkAvailable(Network network)
+    {
+        bool changed;
+        lock (_networkGate)
+        {
+            changed = _currentNetwork is null || !_currentNetwork.Equals(network);
+            _currentNetwork = network;
+        }
+        if (changed) EngineRuntime.OnNetworkChanged(CurrentOperatorMccMnc(network));
+    }
+
+    private void OnDefaultNetworkLost(Network network)
+    {
+        bool changed;
+        lock (_networkGate)
+        {
+            changed = _currentNetwork is not null && _currentNetwork.Equals(network);
+            if (changed) _currentNetwork = null;
+        }
+        if (changed) EngineRuntime.OnNetworkChanged(null);
+    }
+
+    private sealed class DefaultNetworkCallback(ProxyService owner) : ConnectivityManager.NetworkCallback
+    {
+        public override void OnAvailable(Network network) => owner.OnDefaultNetworkAvailable(network);
+
+        public override void OnLost(Network network) => owner.OnDefaultNetworkLost(network);
+    }
 
     private void OnRuntimeChanged()
     {

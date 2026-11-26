@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
-  <!-- Exactly the four permissions E1.3 allows: the proxy needs the network, the foreground service and, on
-       Android 13+, the user's consent to show its notification. Nothing VPN-related. -->
+  <!-- The proxy needs the network, the foreground service and, on Android 13+, the user's consent to show its
+       notification. ACCESS_NETWORK_STATE is the normal (install-time) permission Android requires to register the
+       default-network callback that tells the engine about Wi-Fi ↔ LTE switches. Nothing VPN-related. -->
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
   <!-- Avalonia.Android pulls in AndroidX Core, whose manifest adds this signature permission for dynamic
-       receivers. The debug screen uses none, and E5.6 keeps the permission list at exactly four, so both the
+       receivers. The debug screen uses none, and E5.6 keeps the permission list minimal, so both the
        declaration and its use are removed rather than shipped. -->
   <permission
       android:name="io.github.sunsunflowerdeb.tgwsone.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
