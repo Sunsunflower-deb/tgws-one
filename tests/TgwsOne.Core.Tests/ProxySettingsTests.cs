@@ -10,7 +10,9 @@ public class ProxySettingsTests
     private static ProxyForm DefaultForm() => new(
         Host: "127.0.0.1", Port: "1443", DcMap: "2:149.154.167.220\n4:149.154.167.220",
         CfProxy: true, H2: true, NoSecure: false, Verbose: true,
-        CfDomains: "", WorkerDomains: "", BufKb: "256", PoolSize: "4", LogMaxMb: "5");
+        CfDomains: "", WorkerDomains: "", BufKb: "256", PoolSize: "4", LogMaxMb: "5",
+        // Masking is on out of the box; an empty value in the file is what turns it off.
+        FakeTlsDomain: ProxySettingsStore.DefaultFakeTlsDomain);
 
     private static void AssertSame(ProxySettings expected, ProxySettings actual)
     {

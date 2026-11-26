@@ -24,6 +24,8 @@ internal sealed partial class SettingsViewModel : PageViewModel
     private bool _loading;
     private string? _hostBeforeSharing;
     private string _secret = "";
+    // Not on the page yet: the window keeps whatever the file says, so saving other fields never clears it.
+    private string _fakeTlsDomain = "";
 
     // ----- the form -----
     [ObservableProperty] private string _port = "";
@@ -116,6 +118,7 @@ internal sealed partial class SettingsViewModel : PageViewModel
             BufKb = f.BufKb;
             PoolSize = f.PoolSize;
             LogMaxMb = f.LogMaxMb;
+            _fakeTlsDomain = f.FakeTlsDomain;
             ClearErrors();
 
             LanSharing = _settings.LanSharing;
@@ -195,7 +198,8 @@ internal sealed partial class SettingsViewModel : PageViewModel
             ClearErrors();
             Notice = null;
             string host = LanSharing ? LanShare.WildcardHost : Host;
-            var form = new ProxyForm(host, Port, DcMap, CfProxy, H2, NoSecure, Verbose, CfDomains, WorkerDomains, BufKb, PoolSize, LogMaxMb);
+            var form = new ProxyForm(host, Port, DcMap, CfProxy, H2, NoSecure, Verbose, CfDomains, WorkerDomains, BufKb, PoolSize, LogMaxMb,
+                                     _fakeTlsDomain);
             (ProxySettings? parsed, IReadOnlyList<FieldError> errors) = ProxySettingsStore.Parse(form, _settings.Secret());
             if (parsed is null)
             {

@@ -30,6 +30,13 @@ public static class ProxySettingsStore
     private const string DefaultHost = "127.0.0.1";
     private const int DefaultPort = 1443;
     private const string DefaultDcMap = "2:149.154.167.220,4:149.154.167.220";
+
+    /// <summary>
+    /// The site the proxy pretends to be when masking is on. Chosen for being reachable and unblocked wherever the
+    /// proxy is used, for a plain TLS 1.3 handshake a client would expect from it, and for being unremarkable to meet
+    /// on the wire. An installation that wants another site sets <c>faketls</c> (an empty value turns masking off).
+    /// </summary>
+    public const string DefaultFakeTlsDomain = "www.microsoft.com";
     private const int DefaultBufKb = 256;
     private const int DefaultPoolSize = 4;
     private const int DefaultLogMaxMb = 5;
@@ -58,8 +65,10 @@ public static class ProxySettingsStore
             BufKb: Num("bufkb", DefaultBufKb),
             PoolSize: Num("poolsize", DefaultPoolSize),
             LogMaxMb: Num("logmaxmb", DefaultLogMaxMb),
-            // Empty means "no fake TLS": the link stays a dd-secret and nothing is masked.
-            FakeTlsDomain: Str("faketls", ""));
+            // Masking is on by default: the link is an ee-secret, and a dd link keeps working (about one connection in
+            // 256 starts with byte 0x16 and is answered as a masked one; the client retries). An empty value is a real
+            // value here, not "absent" — it is how masking is turned off, so the raw read is used, like dcmap above.
+            FakeTlsDomain: ini.Get("proxy", "faketls") ?? DefaultFakeTlsDomain);
     }
 
     /// <summary>Validates a form. All problems are reported, in field order; settings are null if there are any.</summary>

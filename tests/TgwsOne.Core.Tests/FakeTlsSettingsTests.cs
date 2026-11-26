@@ -58,11 +58,21 @@ public class FakeTlsSettingsTests
     }
 
     [Fact]
-    public void AnIniWithoutTheKey_StaysWithoutFakeTls()
+    public void AnIniWithoutTheKey_GetsTheDefaultMaskingDomain()
     {
         using var tmp = new TempDir();
         string path = tmp.Combine("TgwsOne.ini");
         File.WriteAllText(path, "[proxy]\nport=1443\n[app]\nsecret=00b42be1ae20f9e3b5d6e543cc4bce98\n");
+
+        Assert.Equal(ProxySettingsStore.DefaultFakeTlsDomain, ProxySettingsStore.Load(IniFile.Load(path)).FakeTlsDomain);
+    }
+
+    [Fact]
+    public void AnExplicitlyEmptyValue_TurnsMaskingOff()
+    {
+        using var tmp = new TempDir();
+        string path = tmp.Combine("TgwsOne.ini");
+        File.WriteAllText(path, "[proxy]\nfaketls=\n[app]\nsecret=00b42be1ae20f9e3b5d6e543cc4bce98\n");
 
         Assert.Equal("", ProxySettingsStore.Load(IniFile.Load(path)).FakeTlsDomain);
     }
