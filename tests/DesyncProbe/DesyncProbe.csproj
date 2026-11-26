@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DesyncProbe</RootNamespace>
+    <AssemblyName>DesyncProbe</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- The probe is a test helper, not a product: it is built pointwise by tests/root/netns-desync.sh and is
+         deliberately absent from TgwsOne.slnx. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TgwsOne.Engine\TgwsOne.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The stend checks the IPv4 TTL, so the probe's socket has to be IPv4: a dual-mode IPv6 socket makes
+         LinuxSocketTricks set IPV6_UNICAST_HOPS, which does not change the IPv4 TTL of a v4-mapped connection. -->
+    <RuntimeHostConfigurationOption Include="System.Net.DisableIPv6" Value="true" />
+  </ItemGroup>
+
+</Project>
