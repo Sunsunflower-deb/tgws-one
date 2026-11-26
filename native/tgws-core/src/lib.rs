@@ -15,6 +15,7 @@
 pub mod config;
 pub mod ffi;
 pub mod net;
+pub mod proto;
 pub mod settings;
 pub mod strategy;
 pub mod tcp;
@@ -23,6 +24,7 @@ pub mod zapret;
 
 pub use ffi::tgws_core_version;
 pub use net::telegram_network::{DC_DEFAULT_IPS, DC_TEST_IPS, WS_PATH, WS_PATH_TEST, ws_domains};
+pub use proto::{AesCtr, CryptoContext, MtProtoConstants, Obfuscated2};
 pub use strategy::{
     AutoHost, Blob, DesyncPart, expand_cf_proxy_hosts, expand_rotation, is_valid_custom_name,
     is_valid_provider, list_providers, provider_rotation, read_auto_state,

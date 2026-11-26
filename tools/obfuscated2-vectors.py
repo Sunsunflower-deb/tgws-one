@@ -8,7 +8,9 @@ outside and cannot.
 
 Each case is one bridged connection as Python computes it: the client's handshake, a relay init for Telegram, and
 both directions re-encrypted. The functions below are the upstream ones (_try_handshake, _generate_relay_init,
-_build_crypto_ctx in proxy/tg_ws_proxy.py at v1.11.4) written out with that library.
+_build_crypto_ctx in proxy/tg_ws_proxy.py at v1.11.4) written out with that library. The `aesCtr` section adds
+standalone AES-CTR vectors for all three key sizes, skips at and around block edges, counter carry, and chunked
+reads, which the bridged cases only exercise indirectly.
 
     python3 tools/obfuscated2-vectors.py        # rewrites the fixture; needs the `cryptography` package
 
@@ -114,6 +116,43 @@ def re_encrypt(stream, first, second, reads):
     return wire
 
 
+def aes_ctr_cases():
+    """Standalone AES-CTR: key sizes 16/24/32, skips on block edges, carry and chunked reads."""
+    rng = random.Random(SEED ^ 0xA35C7)
+    specs = [
+        (16, bytes(16), 0, 0),
+        (24, bytes(range(16)), 1, 1),
+        (32, b"\x00" * 15 + b"\xff", 15, 15),
+        (16, b"\x00" * 14 + b"\xff\xff", 16, 16),
+        (24, b"\xff" * 16, 17, 17),
+        (32, rng.randbytes(16), 31, 31),
+        (16, rng.randbytes(16), 48, 48),
+        (24, rng.randbytes(16), 64, 100),
+        (32, rng.randbytes(16), 100, 255),
+        (16, rng.randbytes(16), 257, 1000),
+        (24, b"\xff" * 16, 0, 512),
+        (32, bytes(range(16)), 0, 1000),
+    ]
+    cases = []
+    for key_size, iv, skip, length in specs:
+        key = rng.randbytes(key_size)
+        plain = rng.randbytes(length)
+        encryptor = ctr(key, iv)
+        if skip:
+            encryptor.update(b"\0" * skip)
+        cipher = encryptor.update(plain)
+        cases.append({
+            "name": f"key{key_size}-skip{skip}-len{length}",
+            "key": key.hex(),
+            "iv": iv.hex(),
+            "skip": skip,
+            "plain": plain.hex(),
+            "reads": read_sizes(length, rng),
+            "cipher": cipher.hex(),
+        })
+    return cases
+
+
 def main():
     rng = random.Random(SEED)
     cases = []
@@ -150,15 +189,18 @@ def main():
     assert try_handshake(wrong_secret, wrong_key) is None
     assert try_handshake(zeros, zeros_key) is None
 
+    aes_ctr = aes_ctr_cases()
     document = {
         "source": "tools/obfuscated2-vectors.py",
         "cases": cases,
         "rejects": [{"secret": wrong_key.hex(), "handshake": wrong_secret.hex()},
                     {"secret": zeros_key.hex(), "handshake": zeros.hex()}],
+        "aesCtr": aes_ctr,
     }
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE.write_text(json.dumps(document, indent=1) + "\n")
-    print(f"{FIXTURE}: {len(cases)} cases, {len(document['rejects'])} rejects, {FIXTURE.stat().st_size // 1024} KB")
+    print(f"{FIXTURE}: {len(cases)} cases, {len(document['rejects'])} rejects, "
+          f"{len(aes_ctr)} aes-ctr vectors, {FIXTURE.stat().st_size // 1024} KB")
 
 
 if __name__ == "__main__":
