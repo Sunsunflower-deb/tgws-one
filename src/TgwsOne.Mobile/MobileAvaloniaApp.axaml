@@ -1,0 +1,67 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.Mobile.MobileAvaloniaApp"
+             RequestedThemeVariant="Default">
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#2F6FEB" RegionColor="#F7F8FA" ErrorText="#D93025" />
+        <ColorPaletteResources x:Key="Dark" Accent="#4C8DFF" RegionColor="#181A1F" ErrorText="#F85149" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="14" />
+    </Style>
+
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource SecondaryText}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style Selector="TextBlock.error">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource ToneRed}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PageBackground" Color="#F7F8FA" />
+          <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="CardBorder" Color="#E2E6EC" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#5B6472" />
+          <SolidColorBrush x:Key="ToneGreen" Color="#1E8E3E" />
+          <SolidColorBrush x:Key="ToneAmber" Color="#C77C02" />
+          <SolidColorBrush x:Key="ToneGrey" Color="#8A93A0" />
+          <SolidColorBrush x:Key="ToneRed" Color="#D93025" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PageBackground" Color="#181A1F" />
+          <SolidColorBrush x:Key="CardBackground" Color="#22252B" />
+          <SolidColorBrush x:Key="CardBorder" Color="#30343C" />
+          <SolidColorBrush x:Key="SecondaryText" Color="#A3ABB8" />
+          <SolidColorBrush x:Key="ToneGreen" Color="#3FB950" />
+          <SolidColorBrush x:Key="ToneAmber" Color="#E3B341" />
+          <SolidColorBrush x:Key="ToneGrey" Color="#8B949E" />
+          <SolidColorBrush x:Key="ToneRed" Color="#F85149" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

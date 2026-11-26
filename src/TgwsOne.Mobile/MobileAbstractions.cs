@@ -51,6 +51,12 @@ public interface IClipboardService
     Task SetTextAsync(string text);
 }
 
+/// <summary>Sends text to whatever can share it (Android's <c>ACTION_SEND</c> chooser).</summary>
+public interface IShareService
+{
+    Task ShareAsync(string text);
+}
+
 /// <summary>Something that happens every so often; tests make time pass by hand.</summary>
 public interface ITicker
 {

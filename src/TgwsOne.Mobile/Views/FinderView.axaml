@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.Mobile"
+             x:Class="TgwsOne.Mobile.Views.FinderView">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,18" Spacing="14">
+
+      <TextBlock Classes="title" Text="Подбор стратегии" />
+
+      <StackPanel x:Name="ConfirmPanel" Spacing="14" IsVisible="{Binding IsConfirm}">
+        <TextBlock x:Name="ConfirmText" Text="{x:Static vm:FinderViewModel.ConfirmText}" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="StartButton" Content="Начать подбор" Command="{Binding StartCommand}" />
+          <Button x:Name="ConfirmCancelButton" Content="Отмена" Command="{Binding CancelCommand}" />
+        </StackPanel>
+      </StackPanel>
+
+      <StackPanel x:Name="ResultPanel" Spacing="12" IsVisible="{Binding ShowTable}">
+        <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsRunning}" />
+        <TextBlock x:Name="ProgressText" Classes="caption" Text="{Binding Progress}" />
+
+        <Border Classes="card">
+          <ItemsControl x:Name="RowList" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                    <TextBlock Classes="caption" Text="{Binding ErrorLine}" IsVisible="{Binding HasError}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="1" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding TelegramText}" HorizontalAlignment="Right"
+                               IsVisible="{Binding !HasError}" />
+                    <TextBlock Classes="caption" Text="{Binding TimeText}" HorizontalAlignment="Right" />
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Border>
+
+        <TextBlock x:Name="VerdictText" Text="{Binding Verdict}" FontWeight="SemiBold" TextWrapping="Wrap"
+                   IsVisible="{Binding Verdict, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock x:Name="FinderErrorText" Classes="error" Text="{Binding ErrorText}"
+                   IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <WrapPanel>
+          <Button x:Name="StopButton" Content="Остановить" Margin="0,0,8,8" IsVisible="{Binding IsRunning}"
+                  Command="{Binding CancelCommand}" />
+          <Button x:Name="RestoreButton" Content="Вернуть как было" Margin="0,0,8,8" IsVisible="{Binding IsDone}"
+                  Command="{Binding RestoreCommand}" />
+          <Button x:Name="ApplyButton" Content="{Binding ApplyText}" Margin="0,0,8,8" IsVisible="{Binding HasBest}"
+                  Command="{Binding ApplyCommand}" />
+        </WrapPanel>
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

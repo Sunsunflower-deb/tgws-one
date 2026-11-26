@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.Mobile.Views.DiagnosticsView">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,18" Spacing="14">
+
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="title" Text="Диагностика" VerticalAlignment="Center" />
+        <Button x:Name="RunButton" Grid.Column="1" Margin="10,0,0,0" Content="{Binding RunText}"
+                Command="{Binding RunCommand}" />
+      </Grid>
+
+      <ProgressBar x:Name="RunProgress" IsIndeterminate="True" Height="3" IsVisible="{Binding IsRunning}" />
+
+      <TextBlock x:Name="HintText" Classes="caption"
+                 Text="Проверка смотрит на прокси, на обход DPI и на сеть и говорит, что не так и что с этим делать."
+                 IsVisible="{Binding ShowHint}" />
+
+      <Border x:Name="ChecksPanel" Classes="card" IsVisible="{Binding HasRows}">
+        <ItemsControl x:Name="CheckList" ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Spacing="1" Margin="0,4">
+                <TextBlock Text="{Binding Title}" TextWrapping="Wrap" />
+                <TextBlock Classes="caption" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <StackPanel x:Name="VerdictPanel" Spacing="10"
+                  IsVisible="{Binding VerdictText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock x:Name="VerdictText" Text="{Binding VerdictText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <Button x:Name="ActionButton" Content="{Binding ActionText}" HorizontalAlignment="Left"
+                IsVisible="{Binding HasAction}" Command="{Binding DoActionCommand}" />
+      </StackPanel>
+
+      <TextBlock x:Name="DiagnosticsErrorText" Classes="error" Text="{Binding ErrorText}"
+                 IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

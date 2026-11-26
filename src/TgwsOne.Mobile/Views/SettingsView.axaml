@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.Mobile"
+             x:Class="TgwsOne.Mobile.Views.SettingsView">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,18" Spacing="14">
+
+      <TextBlock Classes="title" Text="Настройки" />
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="caption" Text="Обход DPI" />
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Стратегия" />
+            <ComboBox x:Name="StrategyBox" ItemsSource="{Binding Strategies}"
+                      SelectedItem="{Binding SelectedStrategy}" HorizontalAlignment="Stretch">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Оператор (для набора Авто)" />
+            <TextBox x:Name="ProviderBox" Text="{Binding Provider}"
+                     PlaceholderText="например, mts или пусто" />
+            <TextBlock x:Name="ProviderErrorText" Classes="error" Text="{Binding ProviderError}"
+                       IsVisible="{Binding ProviderError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Пауза пула, секунд" />
+            <TextBox x:Name="PoolIdleBox" Text="{Binding PoolIdle}" Width="140" HorizontalAlignment="Left" />
+            <TextBlock x:Name="PoolIdleErrorText" Classes="error" Text="{Binding PoolIdleError}"
+                       IsVisible="{Binding PoolIdleError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+
+        </StackPanel>
+      </Border>
+
+      <TextBlock Classes="caption"
+                 Text="Порт, адрес и остальные параметры прокси остаются по умолчанию; на телефоне их менять не нужно." />
+
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button x:Name="SaveButton" Content="Сохранить" Command="{Binding SaveCommand}" />
+        <Button x:Name="ReloadButton" Content="Отменить" Command="{Binding ReloadSettingsCommand}" />
+        <TextBlock x:Name="NoticeText" Classes="caption" Text="{Binding Notice}" VerticalAlignment="Center"
+                   IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

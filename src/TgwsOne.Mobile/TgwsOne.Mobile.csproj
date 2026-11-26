@@ -6,6 +6,9 @@
     <AssemblyName>TgwsOne.Mobile</AssemblyName>
     <!-- Everything the mobile application does lives here without Android APIs, so it can be tested on the desktop;
          the Android project is only the thin glue around this assembly. -->
+    <!-- The views use reflection bindings: a mobile page is small, and this keeps the pages readable without a
+         x:DataType on every control. The desktop keeps compiled bindings. -->
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +19,10 @@
   <ItemGroup>
     <!-- The same MVVM toolkit (MIT) the desktop view-models use: observable properties and relay commands. -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Avalonia itself, so the pages are built and tested on the desktop; Avalonia.Android is added by the
+         Android project, which is the only one that needs a platform. -->
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
   </ItemGroup>
 
 </Project>

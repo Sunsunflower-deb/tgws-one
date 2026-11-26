@@ -15,7 +15,8 @@ namespace TgwsOne.Mobile;
 /// checks open the stream through <see cref="EgressSocket"/> with the strategy the engine would use right now, so a
 /// cut direct handshake and a working bypass are told apart the same way the engine sees them.
 /// </summary>
-public sealed class MobileEgressProbes(MobileEngineHost host, MobileStorage storage, IDesyncControl control,
+public sealed class MobileEgressProbes(MobileStorage storage, IDesyncControl control,
+                                        Func<TimeSpan, CancellationToken, Task<bool>> selfCheck,
                                         string? cloudflareDomain = null) : IEgressProbes
 {
     public string CloudflareDomain { get; } = cloudflareDomain
@@ -134,15 +135,7 @@ public sealed class MobileEgressProbes(MobileEngineHost host, MobileStorage stor
         }
     }
 
-    public async Task<bool> SelfCheckAsync(TimeSpan timeout, CancellationToken ct)
-    {
-        EngineConfig? config = host.Config;
-        if (config is null) return false;
-
-        EngineSelfCheckResult result = await EngineSelfCheck.ExchangeAsync(
-            config, dcIdx: 2, timeout: timeout, ct: ct).ConfigureAwait(false);
-        return result.Ok;
-    }
+    public Task<bool> SelfCheckAsync(TimeSpan timeout, CancellationToken ct) => selfCheck(timeout, ct);
 
     /// <summary>Telegram's WebSocket hosts are dialed by their published DC addresses, as the engine does.</summary>
     private static string AddressFor(string host)

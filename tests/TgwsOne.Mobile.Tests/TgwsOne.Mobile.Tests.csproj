@@ -1,9 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- xUnit v3, the same major version Avalonia.Headless.XUnit 12 is built on; the test project is an executable. -->
+    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>TgwsOne.Mobile.Tests</RootNamespace>
+    <!-- xUnit v3 brings an analyzer that asks every awaited call to pass TestContext.Current.CancellationToken. The
+         engine tests from E4/E5 call the host's optional token deliberately, and rewriting them belongs to those
+         tasks, not to the view tests this change adds. -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,11 +22,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- The same headless platform and version the desktop view tests use. -->
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.6" />
   </ItemGroup>
 
 </Project>

@@ -7,11 +7,12 @@ public class ConnectViewModelTests
         public FakeMobileSettings Settings { get; } = new();
         public FakeLauncher Launcher { get; } = new();
         public FakeClipboard Clipboard { get; } = new();
+        public FakeShareService Share { get; } = new();
         public ConnectViewModel Vm { get; set; }
 
         public Rig()
         {
-            Vm = new ConnectViewModel(Settings, Launcher, Clipboard);
+            Vm = new ConnectViewModel(Settings, Launcher, Clipboard, Share);
         }
     }
 
@@ -67,5 +68,16 @@ public class ConnectViewModelTests
 
         Assert.Equal(rig.Settings.Link, rig.Clipboard.Text);
         Assert.Equal("Ссылка скопирована", rig.Vm.Notice);
+    }
+
+    [Fact]
+    public async Task Share_HandsTheLinkToTheSystemChooser()
+    {
+        var rig = new Rig();
+
+        await rig.Vm.ShareLinkCommand.ExecuteAsync(null);
+
+        Assert.Equal([rig.Settings.Link], rig.Share.Shared);
+        Assert.Equal("Ссылка отправлена", rig.Vm.Notice);
     }
 }

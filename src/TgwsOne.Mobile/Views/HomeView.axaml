@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.Mobile.Views.HomeView">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,18" Spacing="14">
+
+      <TextBlock x:Name="HeadlineText" Classes="title" Text="{Binding Headline}" />
+      <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsBusy}" />
+
+      <Border x:Name="BannerPanel" Classes="card"
+              IsVisible="{Binding Banner, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock x:Name="BannerText" Text="{Binding Banner.Text}" TextWrapping="Wrap" />
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="caption" Text="Прокси" />
+          <TextBlock x:Name="ProxyText" Text="{Binding ProxyLine}" TextWrapping="Wrap" />
+          <Button x:Name="ToggleButton" Content="{Binding ButtonText}" Padding="28,10" FontSize="15"
+                  Command="{Binding ToggleCommand}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="caption" Text="Что дальше" />
+          <TextBlock TextWrapping="Wrap"
+                     Text="После запуска откройте «Подключение к Telegram» и нажмите «Открыть в Telegram»." />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

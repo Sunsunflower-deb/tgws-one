@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.Mobile"
+             x:Class="TgwsOne.Mobile.Views.BypassView">
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,18" Spacing="14">
+
+      <TextBlock Classes="title" Text="Обход DPI" />
+
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="StatusLineText" Text="{Binding StatusLine}" VerticalAlignment="Center"
+                       TextWrapping="Wrap" />
+            <ToggleSwitch x:Name="BypassSwitch" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                          OnContent="Включён" OffContent="Выключен"
+                          IsChecked="{Binding IsBypassOn, Mode=OneWay}"
+                          Command="{Binding ToggleCommand}" />
+          </Grid>
+          <TextBlock x:Name="ErrorTextBlock" Classes="error" Text="{Binding ErrorText}"
+                     IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+      </Border>
+
+      <Border x:Name="AutoPanel" Classes="card" IsVisible="{Binding ShowAuto}">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="caption" Text="Что выбрал Авто" />
+          <TextBlock x:Name="AutoEmptyText" Classes="caption" Text="{x:Static vm:BypassViewModel.EmptyAutoText}"
+                     IsVisible="{Binding AutoIsEmpty}" />
+          <ItemsControl x:Name="AutoList" ItemsSource="{Binding AutoRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding Host}" />
+                    <TextBlock Classes="caption" Text="{Binding StrategyName}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Classes="caption" Text="{Binding Failures}" VerticalAlignment="Center" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="caption" Text="Стратегия" />
+          <ItemsControl x:Name="StrategyList" ItemsSource="{Binding Strategies}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <RadioButton GroupName="Strategy" Content="{Binding Name}" Margin="0,0,12,4"
+                             IsChecked="{Binding IsSelected, Mode=OneWay}"
+                             Command="{Binding ChooseCommand}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

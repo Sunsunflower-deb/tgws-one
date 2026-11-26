@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TgwsOne.Mobile"
+             xmlns:v="using:TgwsOne.Mobile.Views"
+             x:Class="TgwsOne.Mobile.Views.MobileShellView"
+             Background="{DynamicResource PageBackground}">
+
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:ConnectViewModel"><v:ConnectView /></DataTemplate>
+    <DataTemplate DataType="vm:HomeViewModel"><v:HomeView /></DataTemplate>
+    <DataTemplate DataType="vm:BypassViewModel"><v:BypassView /></DataTemplate>
+    <DataTemplate DataType="vm:FinderViewModel"><v:FinderView /></DataTemplate>
+    <DataTemplate DataType="vm:DiagnosticsViewModel"><v:DiagnosticsView /></DataTemplate>
+    <DataTemplate DataType="vm:LogsViewModel"><v:LogsView /></DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel"><v:SettingsView /></DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" Background="{DynamicResource CardBackground}"
+            BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,0,0,1" Padding="10,8">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button x:Name="MenuButton" Classes="plain" Padding="10,8" AutomationProperties.Name="Меню">
+          <TextBlock Text="☰" FontSize="18" />
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+              <MenuItem Header="Главная" Command="{Binding NavigateCommand}" CommandParameter="Home" />
+              <MenuItem Header="Обход DPI" Command="{Binding NavigateCommand}" CommandParameter="Bypass" />
+              <MenuItem Header="Подбор стратегии" Command="{Binding NavigateCommand}" CommandParameter="Finder" />
+              <MenuItem Header="Диагностика" Command="{Binding NavigateCommand}" CommandParameter="Diagnostics" />
+              <MenuItem Header="Журналы" Command="{Binding NavigateCommand}" CommandParameter="Logs" />
+              <MenuItem Header="Настройки" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+              <MenuItem Header="Подключение к Telegram" Command="{Binding NavigateCommand}" CommandParameter="Connect" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+
+        <TextBlock x:Name="TitleText" Grid.Column="1" Text="{Binding Title}" FontSize="18"
+                   FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+
+        <Button x:Name="BackButton" Grid.Column="2" Classes="plain" Padding="10,8" Content="Назад"
+                Command="{Binding BackCommand}" IsVisible="{Binding CanGoBack}" />
+      </Grid>
+    </Border>
+
+    <ContentControl x:Name="PageHost" Grid.Row="1" Content="{Binding Current}" />
+
+    <Border Grid.Row="2" Background="{DynamicResource CardBackground}"
+            BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,1,0,0" Padding="12,10"
+            IsVisible="{Binding ShowFirstRunContinue}">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="caption"
+                   Text="Это первый запуск. Ссылку можно открыть сейчас или позже — в разделе «Подключение к Telegram»." />
+        <Button x:Name="ContinueButton" Content="Продолжить" HorizontalAlignment="Stretch" Padding="16,10"
+                Command="{Binding ContinueCommand}" />
+      </StackPanel>
+    </Border>
+
+  </Grid>
+</UserControl>

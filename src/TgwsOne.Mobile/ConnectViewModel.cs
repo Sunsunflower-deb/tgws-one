@@ -12,16 +12,19 @@ public sealed partial class ConnectViewModel : ObservableObject
     private readonly IMobileSettings _settings;
     private readonly ILauncher _launcher;
     private readonly IClipboardService _clipboard;
+    private readonly IShareService _share;
 
     [ObservableProperty] private string _link = "";
     [ObservableProperty] private string? _notice;
     [ObservableProperty] private string? _errorText;
 
-    public ConnectViewModel(IMobileSettings settings, ILauncher launcher, IClipboardService clipboard)
+    public ConnectViewModel(IMobileSettings settings, ILauncher launcher, IClipboardService clipboard,
+                            IShareService? share = null)
     {
         _settings = settings;
         _launcher = launcher;
         _clipboard = clipboard;
+        _share = share ?? new NoShare();
         Refresh();
     }
 
@@ -43,5 +46,19 @@ public sealed partial class ConnectViewModel : ObservableObject
         ErrorText = null;
         await _clipboard.SetTextAsync(Link);
         Notice = "Ссылка скопирована";
+    }
+
+    [RelayCommand]
+    private async Task ShareLinkAsync()
+    {
+        ErrorText = null;
+        await _share.ShareAsync(Link);
+        Notice = "Ссылка отправлена";
+    }
+
+    /// <summary>Used by the view-model tests and by a build without a sharing surface: the button does nothing harmful.</summary>
+    private sealed class NoShare : IShareService
+    {
+        public Task ShareAsync(string text) => Task.CompletedTask;
     }
 }

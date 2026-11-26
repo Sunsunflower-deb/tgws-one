@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TgwsOne.Mobile.Views.LogsView">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20,18,20,14">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+      <TextBlock Classes="title" Text="Журналы" VerticalAlignment="Center" />
+      <CheckBox x:Name="FollowCheck" Grid.Column="1" Content="Следить за концом"
+                IsChecked="{Binding FollowEnd}" VerticalAlignment="Center" />
+    </Grid>
+
+    <TabControl x:Name="TabsControl" Grid.Row="1" ItemsSource="{Binding Tabs}"
+                SelectedItem="{Binding SelectedTab}">
+      <TabControl.ItemTemplate>
+        <DataTemplate>
+          <TextBlock Text="{Binding Title}" />
+        </DataTemplate>
+      </TabControl.ItemTemplate>
+      <TabControl.ContentTemplate>
+        <DataTemplate>
+          <Border Classes="card" Margin="0,8,0,0" Padding="10">
+            <Grid>
+              <SelectableTextBlock x:Name="LogText" Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding !HasProblem}" />
+              <TextBlock x:Name="ProblemText" Classes="caption" Text="{Binding Problem}"
+                         IsVisible="{Binding HasProblem}" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </TabControl.ContentTemplate>
+    </TabControl>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+      <Button x:Name="CopyButton" Content="Копировать" Command="{Binding CopyCommand}" />
+      <Button x:Name="OpenFolderButton" Content="Открыть папку" Command="{Binding OpenFolderCommand}" />
+      <TextBlock x:Name="NoticeText" Classes="caption" Text="{Binding Notice}" VerticalAlignment="Center"
+                 IsVisible="{Binding Notice, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+
+  </Grid>
+</UserControl>

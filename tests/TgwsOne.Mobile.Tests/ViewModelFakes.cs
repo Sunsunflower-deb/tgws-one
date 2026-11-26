@@ -152,3 +152,14 @@ internal sealed class FakeDiagnosticsActions : IDiagnosticsActions
         return Task.FromResult(Problem);
     }
 }
+
+internal sealed class FakeShareService : IShareService
+{
+    public List<string> Shared { get; } = [];
+
+    public Task ShareAsync(string text)
+    {
+        Shared.Add(text);
+        return Task.CompletedTask;
+    }
+}

@@ -1,232 +1,90 @@
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
-using Android.Graphics;
 using Android.OS;
-using Android.Provider;
-using Android.Views;
-using Android.Widget;
+using Avalonia.Android;
+using TgwsOne.Core;
+using TgwsOne.Engine;
+using TgwsOne.Engine.Desync;
 using TgwsOne.Mobile;
+using TgwsOne.Mobile.Views;
 
 namespace TgwsOne.Android;
 
 /// <summary>
-/// Debug screen. The real UI (E5.2) lives in TgwsOne.Mobile as Avalonia views; this activity is deliberately a
-/// plain Android layout so E1.3 can exercise the engine and the service without pulling a theme package in.
+/// The one window of the phone application. All screens are Avalonia views from <c>TgwsOne.Mobile</c>; this activity
+/// only builds the services those views talk to and hands the system's back button to the shell's stack.
 /// </summary>
 [Activity(
     Name = "io.github.sunsunflowerdeb.tgwsone.MainActivity",
     MainLauncher = true,
     Exported = true,
     Label = "TgwsOne",
-    Theme = "@android:style/Theme.Material.Light.NoActionBar")]
-public sealed class MainActivity : Activity
+    Theme = "@style/Theme.AppCompat.DayNight.NoActionBar")]
+public sealed class MainActivity : AvaloniaMainActivity
 {
     private const int NotificationPermissionRequest = 1;
-    private const int MaxLogLines = 200;
+    private const string UiPreferences = "ui";
+    private const string WelcomeDoneKey = "welcome_done";
 
-    private readonly List<string> _lines = [];
-    private TextView _state = null!;
-    private TextView _link = null!;
-    private TextView _log = null!;
-    private ScrollView _logScroll = null!;
-    private Button _start = null!;
-    private Button _stop = null!;
-    private Button _open = null!;
-    private Button _background = null!;
+    private MobileShellViewModel? _shell;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        SetContentView(BuildView());
-        EngineRuntime.Changed += OnRuntimeChanged;
-        EngineRuntime.Line += OnEngineLine;
-        LoadLogTail();
-        Render();
+
+        _shell = CreateShell();
+        Content = new MobileShellView { DataContext = _shell };
+        BackRequested += OnBackRequested;
         RequestNotificationPermission();
     }
 
     protected override void OnDestroy()
     {
-        EngineRuntime.Changed -= OnRuntimeChanged;
-        EngineRuntime.Line -= OnEngineLine;
+        BackRequested -= OnBackRequested;
+        if (_shell?.Current is LogsViewModel logs) logs.OnHidden();
         base.OnDestroy();
     }
 
-    private View BuildView()
+    private MobileShellViewModel CreateShell()
     {
-        var root = new LinearLayout(this)
-        {
-            Orientation = Orientation.Vertical,
-        };
-        root.SetPadding(Dp(16), Dp(16), Dp(16), Dp(16));
+        MobileStorage storage = MobileStorage.For(FilesDir!.AbsolutePath);
+        var settings = new FileMobileSettings(storage);
+        var proxy = new ServiceProxyControl(this);
+        var desync = new RuntimeDesyncControl(storage);
+        var launcher = new NullLauncher();
+        var clipboard = new AndroidClipboard(this);
+        var probes = new MobileEgressProbes(storage, desync,
+            (timeout, ct) => EngineRuntime.SelfCheckAsync(timeout, ct));
 
-        var title = new TextView(this) { Text = "TgwsOne — отладка" };
-        title.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 22);
-        title.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
-        root.AddView(title);
+        var actions = new ShellDiagnosticsActions(proxy, desync, settings, launcher);
+        var home = new HomeViewModel(proxy, settings, () => EngineRuntime.ActiveConnections);
+        var bypass = new BypassViewModel(desync, settings);
+        var finder = new FinderViewModel(new DesyncFinder(desync, probes));
+        var diagnostics = new DiagnosticsViewModel(
+            new Diagnostics(proxy, desync, probes, () => true, () => EngineRuntime.ActiveConnections), actions);
+        var logs = new LogsViewModel(LogsViewModel.DefaultTabs(storage), new SystemTicker(), clipboard, launcher);
+        var settingsPage = new SettingsViewModel(settings);
+        var connect = new ConnectViewModel(settings, launcher, clipboard);
 
-        _state = new TextView(this);
-        _state.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 16);
-        _state.SetPadding(0, Dp(8), 0, Dp(8));
-        root.AddView(_state);
+        ISharedPreferences? preferences = GetSharedPreferences(UiPreferences, FileCreationMode.Private);
+        bool firstRun = preferences?.GetBoolean(WelcomeDoneKey, false) != true;
 
-        _link = new TextView(this);
-        _link.SetTextIsSelectable(true);
-        _link.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 12);
-        _link.SetTextColor(Color.DarkGray);
-        _link.SetPadding(0, 0, 0, Dp(8));
-        root.AddView(_link);
-
-        var buttons = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        _start = MakeButton("Запустить");
-        _stop = MakeButton("Остановить");
-        _open = MakeButton("Открыть в Telegram");
-        buttons.AddView(_start, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        buttons.AddView(_stop, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-        buttons.AddView(_open, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1.4f));
-        root.AddView(buttons);
-
-        _start.Click += (_, _) => StartProxy();
-        _stop.Click += (_, _) => StopProxy();
-        _open.Click += (_, _) => OpenTelegram();
-
-        var backgroundHint = new TextView(this)
-        {
-            Text = "Если система останавливает прокси при выключенном экране, разрешите приложению работу в фоне.",
-        };
-        backgroundHint.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 12);
-        backgroundHint.SetTextColor(Color.DarkGray);
-        backgroundHint.SetPadding(0, Dp(12), 0, Dp(4));
-        root.AddView(backgroundHint);
-
-        _background = MakeButton("Разрешить работу в фоне");
-        _background.Click += (_, _) => OpenBackgroundSettings();
-        root.AddView(_background);
-
-        var caption = new TextView(this) { Text = "Журнал" };
-        caption.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 14);
-        caption.SetPadding(0, Dp(16), 0, Dp(4));
-        root.AddView(caption);
-
-        _log = new TextView(this);
-        _log.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 10);
-        _log.SetTypeface(Typeface.Create("monospace", TypefaceStyle.Normal), TypefaceStyle.Normal);
-        _log.SetTextIsSelectable(true);
-
-        _logScroll = new ScrollView(this);
-        _logScroll.AddView(_log);
-        root.AddView(_logScroll, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, 0, 1f));
-
-        return root;
+        var shell = new MobileShellViewModel(home, bypass, finder, diagnostics, logs, settingsPage, connect,
+            firstRun, () =>
+            {
+                if (preferences is null) return;
+                using ISharedPreferencesEditor editor = preferences.Edit()!;
+                editor.PutBoolean(WelcomeDoneKey, true);
+                editor.Apply();
+            });
+        actions.Shell = shell;
+        return shell;
     }
 
-    private Button MakeButton(string text)
+    private void OnBackRequested(object? sender, AndroidBackRequestedEventArgs e)
     {
-        var button = new Button(this) { Text = text };
-        button.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 12);
-        return button;
-    }
-
-    private void StartProxy()
-    {
-        try
-        {
-            ProxyService.Start(this);
-            _state.Text = "Запускаю…";
-        }
-        catch (Exception ex)
-        {
-            _state.Text = "Не удалось запустить службу: " + ex.Message;
-        }
-    }
-
-    private void StopProxy()
-    {
-        try
-        {
-            ProxyService.Stop(this);
-        }
-        catch (Exception ex)
-        {
-            _state.Text = "Не удалось остановить службу: " + ex.Message;
-        }
-    }
-
-    private void OpenTelegram()
-    {
-        string? link = EngineRuntime.Link;
-        if (string.IsNullOrEmpty(link))
-        {
-            Toast.MakeText(this, "Сначала запустите движок", ToastLength.Short)?.Show();
-            return;
-        }
-        try
-        {
-            StartActivity(new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(link)));
-        }
-        catch (ActivityNotFoundException)
-        {
-            Toast.MakeText(this, "Telegram не установлен", ToastLength.Long)?.Show();
-        }
-    }
-
-    private void OpenBackgroundSettings()
-    {
-        // App details is the screen where the user can allow background activity on the vendors that hide it
-        // better than stock Android. The app deliberately does not ask for REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
-        try
-        {
-            StartActivity(new Intent(
-                Settings.ActionApplicationDetailsSettings,
-                global::Android.Net.Uri.Parse("package:" + PackageName)));
-        }
-        catch (ActivityNotFoundException)
-        {
-            Toast.MakeText(this, "Настройки приложения недоступны", ToastLength.Long)?.Show();
-        }
-    }
-
-    private void OnRuntimeChanged() => RunOnUiThread(Render);
-
-    private void OnEngineLine(string line) => RunOnUiThread(() => AppendLine(line));
-
-    private void Render()
-    {
-        bool running = EngineRuntime.IsRunning;
-        _state.Text = running
-            ? "Движок работает"
-            : EngineRuntime.Error is { Length: > 0 } error ? "Ошибка: " + error : "Движок остановлен";
-        _link.Text = EngineRuntime.Link ?? "";
-        _start.Enabled = !running;
-        _stop.Enabled = running;
-        _open.Enabled = EngineRuntime.Link is { Length: > 0 };
-    }
-
-    private void LoadLogTail()
-    {
-        try
-        {
-            string path = MobileStorage.For(FilesDir!.AbsolutePath).ProxyLogPath;
-            if (!File.Exists(path)) return;
-            foreach (string line in File.ReadLines(path).TakeLast(MaxLogLines))
-                _lines.Add(line);
-            _log.Text = string.Join('\n', _lines);
-            _logScroll.FullScroll(FocusSearchDirection.Down);
-        }
-        catch (Exception)
-        {
-            // A missing or unreadable earlier journal is not a reason to fail the debug screen.
-        }
-    }
-
-    private void AppendLine(string line)
-    {
-        _lines.Add(line);
-        if (_lines.Count > MaxLogLines) _lines.RemoveAt(0);
-        _log.Text = string.Join('\n', _lines);
-        _logScroll.FullScroll(FocusSearchDirection.Down);
+        if (_shell?.GoBack() == true) e.Handled = true;
     }
 
     private void RequestNotificationPermission()
@@ -236,5 +94,191 @@ public sealed class MainActivity : Activity
         RequestPermissions([global::Android.Manifest.Permission.PostNotifications], NotificationPermissionRequest);
     }
 
-    private int Dp(int value) => (int)(value * Resources!.DisplayMetrics!.Density);
+    /// <summary>
+    /// Starts and stops the foreground service, which owns the engine. The home page sees only this interface, so
+    /// there is never a second listener in the process.
+    /// </summary>
+    private sealed class ServiceProxyControl(MainActivity activity) : IProxyEngineControl
+    {
+        private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(10);
+
+        public async Task<EngineStartResult> StartAsync(CancellationToken ct = default)
+        {
+            if (EngineRuntime.IsRunning)
+                return new EngineStartResult(EngineStartOutcome.AlreadyRunning, EngineRuntime.Port);
+
+            ProxyService.Start(activity);
+            DateTime deadline = DateTime.UtcNow + StartTimeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (EngineRuntime.IsRunning)
+                    return new EngineStartResult(EngineStartOutcome.Started, EngineRuntime.Port);
+                if (EngineRuntime.Error is { Length: > 0 } error)
+                    return new EngineStartResult(EngineStartOutcome.EngineExited, EngineRuntime.Port, Output: error);
+                await Task.Delay(50, ct);
+            }
+            return new EngineStartResult(EngineStartOutcome.Timeout, EngineRuntime.Port);
+        }
+
+        public async Task<EngineStopOutcome> StopAsync(CancellationToken ct = default)
+        {
+            if (!EngineRuntime.IsRunning) return EngineStopOutcome.NotRunning;
+
+            ProxyService.Stop(activity);
+            DateTime deadline = DateTime.UtcNow + StopTimeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (!EngineRuntime.IsRunning) return EngineStopOutcome.Stopped;
+                await Task.Delay(50, ct);
+            }
+            return EngineStopOutcome.Stopped;
+        }
+
+        public EngineProxyStatus GetStatus()
+        {
+            bool running = EngineRuntime.IsRunning;
+            int port = EngineRuntime.Port;
+            return new EngineProxyStatus(running, running && port > 0, port, PortBusyByOther: false,
+                                         Pid: running ? System.Environment.ProcessId : null);
+        }
+
+        public bool RestartNeeded() => false;
+    }
+
+    /// <summary>The live controller from the service's engine, with the same rules as the desktop's mobile host.</summary>
+    private sealed class RuntimeDesyncControl(MobileStorage storage) : IDesyncControl
+    {
+        public IReadOnlyList<DesyncStrategy> Rotation
+            => EngineRuntime.Desync?.Rotation
+               ?? DesyncRotations.ForOperator(AndroidSettingsStore.Load(IniFile.Load(storage.IniPath)).Provider);
+
+        public IReadOnlyList<AutoHost> AutoHosts
+            => EngineRuntime.Desync is { IsAuto: true } live ? live.AutoHosts : [];
+
+        public Task<FinderBaseline> CaptureAsync(CancellationToken ct = default)
+        {
+            if (EngineRuntime.Desync is { } live)
+            {
+                string id = live.Selected?.Id ?? DesyncFinder.AutoId;
+                return Task.FromResult(new FinderBaseline(id, id != DesyncFinder.NoBypassId));
+            }
+
+            AndroidSettings settings = AndroidSettingsStore.Load(IniFile.Load(storage.IniPath));
+            return Task.FromResult(new FinderBaseline(settings.Strategy, false));
+        }
+
+        public Task<string?> ApplyAsync(string candidateId, CancellationToken ct = default)
+        {
+            try
+            {
+                DesyncController? controller = EngineRuntime.Desync;
+                if (controller is null) return Task.FromResult<string?>("движок прокси не запущен");
+
+                if (candidateId == DesyncFinder.NoBypassId)
+                {
+                    controller.Select(new DesyncStrategy(DesyncFinder.NoBypassId, []));
+                    return Task.FromResult<string?>(null);
+                }
+                if (candidateId == DesyncFinder.AutoId)
+                {
+                    controller.UseAuto();
+                    return Task.FromResult<string?>(null);
+                }
+
+                if (!DesyncFinder.TryParseCandidate(candidateId, out string id, out int? ttl))
+                    return Task.FromResult<string?>($"непонятный кандидат: {candidateId}");
+
+                DesyncStrategy? strategy = Rotation.FirstOrDefault(s => s.Id == id) ?? BuiltInDesync.Find(id);
+                if (strategy is null) return Task.FromResult<string?>($"нет такой стратегии: {id}");
+                if (ttl is { } value) strategy = DesyncFinder.WithFakeTtl(strategy, value);
+
+                controller.Select(strategy);
+                return Task.FromResult<string?>(null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                           or InvalidOperationException)
+            {
+                return Task.FromResult<string?>(ex.Message);
+            }
+        }
+
+        public Task<string?> RestoreAsync(FinderBaseline baseline, CancellationToken ct = default)
+        {
+            try
+            {
+                if (!baseline.Enabled)
+                {
+                    EngineRuntime.Desync = null;
+                    return Task.FromResult<string?>(null);
+                }
+
+                DesyncController controller = EngineRuntime.Desync ?? new DesyncController();
+                EngineRuntime.Desync = controller;
+                if (baseline.Strategy == DesyncFinder.AutoId || BuiltInDesync.Find(baseline.Strategy) is not { } strategy)
+                    controller.UseAuto();
+                else
+                    controller.Select(strategy);
+
+                return Task.FromResult<string?>(null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                           or InvalidOperationException)
+            {
+                return Task.FromResult<string?>(ex.Message);
+            }
+        }
+
+        public DesyncStrategy? Resolve(string sni, string route) => EngineRuntime.Desync?.Resolve(sni, route);
+    }
+
+    private sealed class ShellDiagnosticsActions(ServiceProxyControl proxy, RuntimeDesyncControl desync,
+                                                  FileMobileSettings settings, ILauncher launcher)
+        : IDiagnosticsActions
+    {
+        public MobileShellViewModel? Shell { get; set; }
+
+        public async Task<string?> ConnectAsync()
+        {
+            EngineStartResult result = await proxy.StartAsync();
+            return result.Ok ? null : "Не удалось запустить прокси.";
+        }
+
+        public async Task<string?> OpenInTelegramAsync()
+            => await launcher.OpenAsync(settings.TelegramLink())
+                ? null
+                : "Не удалось открыть Telegram. Скопируйте ссылку на странице «Подключение к Telegram».";
+
+        public async Task<string?> EnableBypassAsync()
+        {
+            string strategy = settings.LoadAndroid().Strategy;
+            if (strategy.Length == 0 || strategy == DesyncFinder.NoBypassId) strategy = DesyncFinder.AutoId;
+            return await desync.ApplyAsync(strategy);
+        }
+
+        public Task<string?> FindStrategyAsync()
+        {
+            Shell?.ShowFinder();
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string?> ChangePortAsync()
+            => Task.FromResult<string?>("Свободный порт выбирается при запуске; отдельной смены порта на телефоне нет.");
+    }
+
+    /// <summary>Until E5.3 wires the real <c>tg://</c> intent, the page explains that the link could not be opened.</summary>
+    private sealed class NullLauncher : ILauncher
+    {
+        public Task<bool> OpenAsync(string url) => Task.FromResult(false);
+    }
+
+    private sealed class AndroidClipboard(MainActivity activity) : IClipboardService
+    {
+        public Task SetTextAsync(string text)
+        {
+            var manager = (ClipboardManager?)activity.GetSystemService(Context.ClipboardService);
+            if (manager is not null) manager.PrimaryClip = ClipData.NewPlainText("TgwsOne", text);
+            return Task.CompletedTask;
+        }
+    }
 }

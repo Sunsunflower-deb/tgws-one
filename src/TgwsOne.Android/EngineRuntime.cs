@@ -33,6 +33,37 @@ internal static class EngineRuntime
     public static string? Link => _link;
     public static string? Error => _error;
 
+    /// <summary>The port the live listener is on, or 0 while there is none.</summary>
+    public static int Port => _engine?.Port ?? 0;
+
+    /// <summary>Telegram clients attached to the live engine, for the mobile status line and diagnostics.</summary>
+    public static long ActiveConnections => _engine?.Stats.ConnectionsActive ?? 0;
+
+    /// <summary>
+    /// The live bypass controller. The mobile bypass and finder pages read and replace it; assigning it while the
+    /// engine runs makes the engine drop its idle pools exactly as a strategy change does.
+    /// </summary>
+    public static DesyncController? Desync
+    {
+        get => _desync;
+        set
+        {
+            _desync = value;
+            if (_engine is { } engine) engine.Desync = value;
+        }
+    }
+
+    /// <summary>The engine's full client-to-Telegram exchange, used by the phone's diagnostics page.</summary>
+    public static async Task<bool> SelfCheckAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        EngineConfig? config = _engine?.Config;
+        if (config is null) return false;
+
+        EngineSelfCheckResult result = await EngineSelfCheck.ExchangeAsync(
+            config, dcIdx: 2, timeout: timeout, ct: ct).ConfigureAwait(false);
+        return result.Ok;
+    }
+
     public static async Task StartAsync(string filesDirectory, string? operatorMccMnc = null,
                                         CancellationToken ct = default)
     {
