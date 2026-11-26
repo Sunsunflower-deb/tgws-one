@@ -59,7 +59,7 @@ public sealed class DesyncControllerTests
     [Fact]
     public void NoRotation_ResolvesToNoDesync()
     {
-        var controller = new DesyncController();
+        var controller = new DesyncController([]);
 
         Assert.Null(controller.Resolve("example.test", "ws"));
         Assert.Empty(controller.Rotation);

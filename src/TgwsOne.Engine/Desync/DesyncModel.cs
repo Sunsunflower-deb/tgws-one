@@ -22,7 +22,11 @@ public sealed record TlsRec(DesyncPosition Pos) : DesyncStep;
 public sealed record Pause(TimeSpan Delay) : DesyncStep;
 
 /// <summary>An ordered list of steps for one route. An empty list means no desync.</summary>
-public sealed record DesyncStrategy(string Id, IReadOnlyList<DesyncStep> Steps);
+public sealed record DesyncStrategy(string Id, IReadOnlyList<DesyncStep> Steps)
+{
+    /// <summary>The user-facing name; built-in strategies have Russian titles, custom ones may leave it null.</summary>
+    public string? Title { get; init; }
+}
 
 /// <summary>Why an egress attempt failed, as far as the desync controller can tell.</summary>
 public enum EgressFailure

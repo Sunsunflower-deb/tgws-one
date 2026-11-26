@@ -36,7 +36,7 @@ public sealed class DesyncController : IDesyncController
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_failureWindow, TimeSpan.Zero);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _maxFailures = maxFailures;
-        _rotation = Snapshot(rotation ?? []);
+        _rotation = Snapshot(rotation ?? BuiltInDesync.BuiltIn);
     }
 
     /// <summary>An explicit strategy, or null for <c>auto</c>.</summary>
