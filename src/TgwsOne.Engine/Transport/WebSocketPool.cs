@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using TgwsOne.Engine.Desync;
+using TgwsOne.Engine.Relay;
 
 namespace TgwsOne.Engine.Transport;
 
@@ -9,7 +10,7 @@ namespace TgwsOne.Engine.Transport;
 /// path of its handshake), and the pool refills itself in the background and rotates connections older than two
 /// minutes so one side never sees a stale idle socket.
 /// </summary>
-public sealed class WebSocketPool : IAsyncDisposable
+public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
 {
     private const double MaxAgeSeconds = 120;
     private const double CheckIntervalSeconds = 5;
@@ -19,7 +20,7 @@ public sealed class WebSocketPool : IAsyncDisposable
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
-    private readonly IEgress? _egress;
+    private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<PoolKey, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
@@ -44,6 +45,9 @@ public sealed class WebSocketPool : IAsyncDisposable
         _stats = stats;
         _egress = egress;
     }
+
+    /// <summary>Swaps the egress used by connections made from now on; already open sockets keep theirs.</summary>
+    public void SetEgress(IEgress? egress) => _egress = egress;
 
     private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
@@ -305,6 +309,19 @@ public sealed class WebSocketPool : IAsyncDisposable
         _log.Info($"WS pool warmup started for {_config.DcRedirects.Count} DC(s)");
     }
 
+    /// <summary>Closes every idle socket and leaves refill/rotation running for the next client.</summary>
+    public void CloseIdle()
+    {
+        List<RawWebSocket> sockets;
+        lock (_gate)
+        {
+            sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
+            foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
+        }
+        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+        if (sockets.Count > 0) _log.Debug($"WS pool closed {sockets.Count} idle connection(s)");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
@@ -336,7 +353,7 @@ public sealed class WebSocketPool : IAsyncDisposable
 /// A one-slot-per-DC pool of WebSockets through a Cloudflare Worker (<c>/apiws?dst=…&amp;dc=…</c>). Only used when
 /// the user configured worker domains; it is the last resort before a plain TCP fallback to the DC address.
 /// </summary>
-public sealed class CfWorkerPool : IAsyncDisposable
+public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
 {
     private const double MaxAgeSeconds = 100;
     private const double CheckIntervalSeconds = 5;
@@ -347,7 +364,7 @@ public sealed class CfWorkerPool : IAsyncDisposable
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
-    private readonly IEgress? _egress;
+    private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<int, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
@@ -369,6 +386,9 @@ public sealed class CfWorkerPool : IAsyncDisposable
         _stats = stats;
         _egress = egress;
     }
+
+    /// <summary>Swaps the egress used by connections made from now on; already open sockets keep theirs.</summary>
+    public void SetEgress(IEgress? egress) => _egress = egress;
 
     private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
@@ -584,6 +604,19 @@ public sealed class CfWorkerPool : IAsyncDisposable
     {
         try { socket.Abort(); }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+    }
+
+    /// <summary>Closes every idle socket and leaves refill/rotation running for the next client.</summary>
+    public void CloseIdle()
+    {
+        List<RawWebSocket> sockets;
+        lock (_gate)
+        {
+            sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
+            foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
+        }
+        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+        if (sockets.Count > 0) _log.Debug($"CF worker pool closed {sockets.Count} idle connection(s)");
     }
 
     public async ValueTask DisposeAsync()

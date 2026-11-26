@@ -9,6 +9,12 @@ using TgwsOne.Engine.Transport;
 
 namespace TgwsOne.Engine.Relay;
 
+/// <summary>A pool that can drop only its idle entries; a strategy switch must never touch a live session.</summary>
+internal interface IIdleConnectionPool
+{
+    void CloseIdle();
+}
+
 /// <summary>
 /// The MTProto-over-WebSocket proxy itself: a listener for Telegram Desktop, the obfuscated2 handshake, a warm
 /// WebSocket pool per DC, and the transport fallbacks (Cloudflare Worker, Cloudflare HTTP/2 for media, plain TCP).
@@ -30,7 +36,10 @@ public sealed class ProxyEngine : IAsyncDisposable
     private readonly CfWorkerPool _cfWorkerPool;
     private readonly CfDomainRefresher _refresher;
     private readonly CfH2Pool? _h2Pool;
-    private readonly IEgress? _egress;
+    private readonly IReadOnlyList<IIdleConnectionPool> _idlePools;
+    private readonly object _desyncGate = new();
+    private volatile IEgress? _egress;
+    private IDesyncController? _desync;
     private readonly byte[] _secret;
     private readonly CancellationTokenSource _stop = new();
     private readonly ConcurrentDictionary<long, Task> _clients = new();
@@ -49,15 +58,78 @@ public sealed class ProxyEngine : IAsyncDisposable
     /// transport code runs exactly as before. Masking and the domain refresher never see it by design.
     /// </param>
     public ProxyEngine(EngineConfig config, EngineLog? log = null, IDesyncController? desync = null)
+        : this(config, log, desync, idlePools: null)
+    {
+    }
+
+    /// <param name="idlePools">Test seam: stand-in pools that record a strategy switch instead of real connections.</param>
+    internal ProxyEngine(EngineConfig config, EngineLog? log, IDesyncController? desync,
+                         IReadOnlyList<IIdleConnectionPool>? idlePools)
     {
         _config = config;
         _log = log ?? new EngineLog(config.Verbose, config.LogFile, config.LogMaxMb, config.LogBackups);
         _secret = Convert.FromHexString(config.Secret);
+        _desync = desync;
+        AttachDesync(desync);
         _egress = desync is null ? null : new DesyncEgress(desync, _log.Warn, stats: _stats);
         _wsPool = new WebSocketPool(config, _log, _stats, _egress);
         _cfWorkerPool = new CfWorkerPool(config, _log, _stats, _egress);
         _refresher = new CfDomainRefresher(_balancer, _log, config.CfproxyUserDomains);
         if (config.H2Enabled) _h2Pool = new CfH2Pool(config, _log, _stats, _balancer, _egress);
+        _idlePools = idlePools ?? DefaultIdlePools();
+    }
+
+    private IReadOnlyList<IIdleConnectionPool> DefaultIdlePools()
+    {
+        var pools = new List<IIdleConnectionPool> { _wsPool, _cfWorkerPool };
+        if (_h2Pool is not null) pools.Add(_h2Pool);
+        return pools;
+    }
+
+    /// <summary>
+    /// The strategy source. A change only drops idle connections: sessions already relaying keep the stream they
+    /// were opened with, and null means the plain path with no desync at all.
+    /// </summary>
+    public IDesyncController? Desync
+    {
+        get => _desync;
+        set
+        {
+            lock (_desyncGate)
+            {
+                if (ReferenceEquals(_desync, value)) return;
+                AttachDesync(value);
+                _desync = value;
+                IEgress? egress = value is null ? null : new DesyncEgress(value, _log.Warn, stats: _stats);
+                _egress = egress;
+                _wsPool.SetEgress(egress);
+                _cfWorkerPool.SetEgress(egress);
+                _h2Pool?.SetEgress(egress);
+            }
+            CloseIdlePools();
+            _log.Info(value is null ? "desync disabled" : "desync controller changed; idle connections dropped");
+        }
+    }
+
+    /// <summary>
+    /// A controller change made in place (selecting another strategy) is just as much a strategy switch as assigning
+    /// a new controller, so the same idle connections are dropped for it.
+    /// </summary>
+    private void AttachDesync(IDesyncController? controller)
+    {
+        if (_desync is DesyncController previous) previous.Changed -= OnDesyncChanged;
+        if (controller is DesyncController next) next.Changed += OnDesyncChanged;
+    }
+
+    private void OnDesyncChanged()
+    {
+        CloseIdlePools();
+        _log.Info("desync selection changed; idle connections dropped");
+    }
+
+    private void CloseIdlePools()
+    {
+        foreach (IIdleConnectionPool pool in _idlePools) pool.CloseIdle();
     }
 
     public bool IsRunning { get; private set; }

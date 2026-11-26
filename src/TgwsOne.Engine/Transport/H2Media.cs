@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using TgwsOne.Engine.Crypto;
 using TgwsOne.Engine.Desync;
 using TgwsOne.Engine.MtProto;
+using TgwsOne.Engine.Relay;
 
 namespace TgwsOne.Engine.Transport;
 
@@ -20,7 +21,7 @@ public sealed class MtProtoTransportException(int code, string source) : Excepti
 /// .NET's <see cref="HttpClient"/> does the multiplexing and flow control that upstream implemented by hand on
 /// top of httpx/h2; the bounds, status handling and error mapping are the same.
 /// </summary>
-public sealed class CfH2Pool : IAsyncDisposable
+public sealed class CfH2Pool : IAsyncDisposable, IIdleConnectionPool
 {
     private const int MaxChannelRequests = 8;
     private const int MaxChannelBytes = 8 * 1024 * 1024;
@@ -31,7 +32,7 @@ public sealed class CfH2Pool : IAsyncDisposable
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
     private readonly DomainBalancer _balancer;
-    private readonly IEgress? _egress;
+    private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<string, CfH2Lane> _lanes = [];
     private readonly Dictionary<string, SemaphoreSlim> _locks = [];
@@ -49,6 +50,26 @@ public sealed class CfH2Pool : IAsyncDisposable
         _stats = stats;
         _balancer = balancer;
         _egress = egress;
+    }
+
+    /// <summary>Swaps the egress used by newly created lanes; live lanes keep the stream they were opened with.</summary>
+    public void SetEgress(IEgress? egress) => _egress = egress;
+
+    /// <summary>Drops lanes with no live channel; a strategy switch must not interrupt a running media session.</summary>
+    public void CloseIdle()
+    {
+        List<CfH2Lane> idle = [];
+        lock (_gate)
+        {
+            foreach ((string host, CfH2Lane lane) in _lanes)
+            {
+                if (lane.ActiveChannels == 0) idle.Add(lane);
+            }
+            foreach (CfH2Lane lane in idle) _lanes.Remove(lane.Host);
+        }
+        foreach (CfH2Lane lane in idle)
+            lane.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (idle.Count > 0) _log.Debug($"H2 pool closed {idle.Count} idle lane(s)");
     }
 
     private static double Now() => Environment.TickCount64 / 1000.0;
@@ -144,6 +165,7 @@ public sealed class CfH2Pool : IAsyncDisposable
                 }
 
                 var channel = new CfH2Channel(lane, Interlocked.Increment(ref _nextChannel), label, _log, _stats);
+                lane.ChannelOpened();
                 _balancer.UpdateDomainForDc(dc, domain);
                 _log.Info($"[{label}] ROUTE DC{dc} media -> H2 lane={lane.LaneId} channel={channel.Id} host={host}");
                 return channel;
@@ -179,6 +201,15 @@ internal sealed class CfH2Lane : IAsyncDisposable
     public string Host { get; }
     public int LaneId { get; }
     public double FailedUntil { get; set; }
+
+    private int _activeChannels;
+
+    /// <summary>Channels that still own a live session; only a lane at zero may be dropped on a strategy switch.</summary>
+    public int ActiveChannels => Volatile.Read(ref _activeChannels);
+
+    internal void ChannelOpened() => Interlocked.Increment(ref _activeChannels);
+
+    internal void ChannelClosed() => Interlocked.Decrement(ref _activeChannels);
 
     private readonly HttpClient _client;
     private readonly EngineLog _log;
@@ -320,6 +351,7 @@ public sealed class CfH2Channel
     });
     private readonly CancellationTokenSource _requests = new();
     private long _pendingBytes;
+    private int _released;
     private volatile bool _closed;
 
     public int Id { get; }
@@ -436,11 +468,15 @@ public sealed class CfH2Channel
 
     public void Close()
     {
-        if (_closed) return;
-        _closed = true;
-        _requests.Cancel();
-        _replies.Writer.TryComplete();
-        _stats.H2Connection();
+        bool first = !_closed;
+        if (first)
+        {
+            _closed = true;
+            _requests.Cancel();
+            _replies.Writer.TryComplete();
+            _stats.H2Connection();
+        }
+        if (Interlocked.Exchange(ref _released, 1) == 0) _lane.ChannelClosed();
     }
 
     public ValueTask DisposeAsync()
