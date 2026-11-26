@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TgwsOne.Engine\TgwsOne.Engine.csproj" />
+    <!-- The engine itself is a leaf now; these tests still cover the desktop host and the control channel in Core. -->
+    <ProjectReference Include="..\..\src\TgwsOne.Core\TgwsOne.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

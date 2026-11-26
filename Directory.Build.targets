@@ -1,0 +1,11 @@
+<Project>
+  <!-- The desktop default lives here rather than in Directory.Build.props: props is imported before the project
+       body, so setting TargetFramework there would leave a project that also sets TargetFrameworks with both
+       properties, and the single framework wins. This file sees the body's choice. Directory.Build.targets is
+       normally imported too late for the SDK's target framework inference, so Directory.Build.props also points
+       BeforeTargetFrameworkInferenceTargets at this file to apply the default before identifier and version are
+       parsed. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == '' And '$(TargetFrameworks)' == ''">
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>

@@ -9,4 +9,9 @@
     <InternalsVisibleTo Include="TgwsOne.Core.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\TgwsOne.Shared\TgwsOne.Shared.csproj" />
+    <ProjectReference Include="..\TgwsOne.Engine\TgwsOne.Engine.csproj" />
+  </ItemGroup>
+
 </Project>

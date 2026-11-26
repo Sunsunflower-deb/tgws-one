@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using TgwsOne.Core;
 
 namespace TgwsOne.Engine;
 
@@ -59,33 +58,6 @@ public sealed record EngineConfig
     /// <summary>HTTP/2 for media through Cloudflare: only where the plain CF-proxy over HTTPS is usable at all.</summary>
     public bool H2Enabled => CfproxyH2Media && FallbackCfProxy && !DisableSecure && !ForceTestDc;
 
-    /// <summary>
-    /// The settings the application stores, mapped one-to-one to engine flags. <paramref name="logFile"/> is the
-    /// proxy log the UI's Журналы page reads.
-    /// </summary>
-    public static EngineConfig FromSettings(ProxySettings s, string? logFile)
-        => new()
-        {
-            Host = s.Host.ToString(),
-            Port = s.Port,
-            Secret = s.Secret,
-            DcRedirects = s.DcMap.ToDictionary(d => d.Dc, d => d.Ip.ToString()),
-            BufferSize = Math.Max(4, s.BufKb) * 1024,
-            PoolSize = Math.Max(0, s.PoolSize),
-            FallbackCfProxy = s.CfProxy,
-            CfproxyUserDomains = s.CfDomains,
-            CfproxyWorkerDomains = s.WorkerDomains,
-            CfproxyH2Media = s.H2,
-            DisableSecure = s.NoSecure,
-            FakeTlsDomain = s.FakeTlsDomain,
-            // Masked mode already hides the handshake; an idle pooled socket must not give it away by staying silent.
-            PingIntervalSeconds = s.FakeTlsDomain.Length > 0 ? DefaultPingIntervalSeconds : 0,
-            Verbose = s.Verbose,
-            LogFile = logFile,
-            LogMaxMb = s.LogMaxMb,
-            LogBackups = 1,
-        };
-
     public static string NewSecret() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
 
     public static bool IsValidSecret(string? s) => s is { Length: 32 } && s.All(Uri.IsHexDigit);
@@ -124,8 +96,9 @@ public sealed record EngineConfig
 }
 
 /// <summary>
-/// The engine's command line: exactly the flags tg-ws-proxy v1.11.4 accepted, because <see cref="EngineCommand"/>
-/// in Core still builds them and existing installations, scripts and the process fallback pass them through.
+/// The engine's command line: exactly the flags tg-ws-proxy v1.11.4 accepted, because the
+/// <c>EngineCommand</c> in Core still builds them and existing installations, scripts and the
+/// process fallback pass them through.
 /// </summary>
 public static class EngineConfigParser
 {

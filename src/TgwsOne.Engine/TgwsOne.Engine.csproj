@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
     <RootNamespace>TgwsOne.Engine</RootNamespace>
     <AssemblyName>TgwsOne.Engine</AssemblyName>
     <!-- The proxy engine is a library: the application hosts it in its own process (and the engine command line
@@ -13,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TgwsOne.Core\TgwsOne.Core.csproj" />
+    <ProjectReference Include="..\TgwsOne.Shared\TgwsOne.Shared.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
-using TgwsOne.Core;
+using TgwsOne.Engine;
 using TgwsOne.Engine.Relay;
 
-namespace TgwsOne.Engine;
+namespace TgwsOne.Core;
 
 /// <summary>
 /// Runs the proxy inside the application process. It keeps the observable behaviour of the old detached engine —
@@ -108,7 +108,7 @@ public sealed class InProcessEngineHost : IProxyEngineControl, IAsyncDisposable
             s = s with { Port = free };
         }
 
-        EngineConfig config = EngineConfig.FromSettings(s, _paths.ProxyLogFile);
+        EngineConfig config = EngineConfigFactory.FromSettings(s, _paths.ProxyLogFile);
         var engine = new ProxyEngine(config, new EngineLog(s.Verbose, _paths.ProxyLogFile, s.LogMaxMb, 1, console: false));
         try
         {

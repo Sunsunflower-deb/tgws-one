@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <!-- The namespace stays TgwsOne.Core: these types moved out of the desktop assembly, not out of the API. -->
+    <RootNamespace>TgwsOne.Core</RootNamespace>
+    <AssemblyName>TgwsOne.Shared</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TgwsOne.Core.Tests" />
+  </ItemGroup>
+
+</Project>

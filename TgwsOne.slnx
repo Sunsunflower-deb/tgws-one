@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/TgwsOne.Core/TgwsOne.Core.csproj" />
     <Project Path="src/TgwsOne.Engine/TgwsOne.Engine.csproj" />
+    <Project Path="src/TgwsOne.Shared/TgwsOne.Shared.csproj" />
     <Project Path="src/TgwsOne/TgwsOne.csproj" />
   </Folder>
   <Folder Name="/tests/">

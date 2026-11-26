@@ -1,6 +1,11 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Directory.Build.targets is imported after the project body, which is where the default framework must be
+         decided (see that file). The SDK infers the framework identifier before the normal targets import, so
+         hook the same file in at the inference import point too. -->
+    <BeforeTargetFrameworkInferenceTargets>$(MSBuildThisFileDirectory)Directory.Build.targets</BeforeTargetFrameworkInferenceTargets>
+    <!-- The file is imported through the hook above; the normal late import would only duplicate it and warn. -->
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

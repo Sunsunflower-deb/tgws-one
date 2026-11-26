@@ -14,7 +14,7 @@ public static class PacketCodec
     private const int MaxPlainPadding = 256;
 
     /// <param name="tag">The protocol the client's handshake announced (abridged, intermediate or padded intermediate).</param>
-    /// <param name="quickAck">The abridged "quick ack" bit; carried but not acted on, as upstream.</param>
+    /// <returns>The packet body, plus the abridged "quick ack" bit: it is carried but not acted on, as upstream.</returns>
     public static async Task<(byte[] Body, bool QuickAck)> ReadPacketAsync(
         Stream stream, AesCtr decryptor, uint tag, CancellationToken ct)
     {
