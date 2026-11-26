@@ -33,6 +33,12 @@ public sealed partial class EngineLog : IDisposable
 
     public bool IsDebug => _verbose;
 
+    /// <summary>
+    /// Raised after each stored line with the same "HH:mm:ss  LEVEL  text" the file gets. The Android host uses it
+    /// to mirror the journal into logcat; a faulty subscriber must never break the engine.
+    /// </summary>
+    public event Action<string>? Line;
+
     public void Debug(string message)
     {
         if (_verbose) Write("DEBUG", message);
@@ -70,6 +76,7 @@ public sealed partial class EngineLog : IDisposable
                 _file = null;
             }
         }
+        try { Line?.Invoke(line); } catch { /* a faulty subscriber must not break logging */ }
     }
 
     private void OpenFile()

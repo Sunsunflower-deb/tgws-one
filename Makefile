@@ -2,6 +2,7 @@ PREFIX  ?= /usr/local
 DESTDIR ?=
 RID_LINUX := linux-x64
 PUB := out/publish
+ANDROID_PUB := $(PUB)/android
 
 APP_BIN    := $(PUB)/$(RID_LINUX)/tgwsone
 ZAPRET_SRC := $(PUB)/$(RID_LINUX)/zapret2
@@ -19,7 +20,7 @@ DIST_NAME := tgwsone-$(VERSION)
 DIST_DIR  := dist/$(DIST_NAME)
 DIST_TAR  := dist/$(DIST_NAME)-linux-x64.tar.gz
 
-.PHONY: zapret2 build build-win test test-engine test-network run install uninstall install-desktop uninstall-desktop dist-linux clean
+.PHONY: zapret2 build build-win android test test-engine test-network run install uninstall install-desktop uninstall-desktop dist-linux clean
 
 # The MTProto-over-WebSocket engine is compiled into the application (src/TgwsOne.Engine). Kept as a target so
 # older instructions and CI jobs that still say `make engine` do not fail.
@@ -44,6 +45,11 @@ build-win:
 	rm -rf $(PUB)/win-x64/zapret2 $(PUB)/win-x64/lists
 	cp -a out/zapret2/win-x64 $(PUB)/win-x64/zapret2
 	mkdir -p $(PUB)/win-x64/lists && cp lists/*.txt $(PUB)/win-x64/lists/
+
+# Debug APK for a phone: the bypass is inside the engine, so zapret2 (a desktop dependency) is not needed here.
+# The Android SDK and JDK come from ANDROID_HOME/ANDROID_SDK_ROOT and JAVA_HOME, as the platform build expects.
+android:
+	dotnet publish src/TgwsOne.Android -c Debug -f net10.0-android -o $(ANDROID_PUB)
 
 # Tests never get a display or the session bus: the app opens its window when started without a switch, shows notifications
 # and a tray icon through the bus, and a test run must not be able to put any of it on the desktop of whoever runs it (the UI

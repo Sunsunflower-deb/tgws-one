@@ -1,0 +1,139 @@
+using Android.App;
+using Android.Content;
+using Android.Content.PM;
+using Android.Graphics.Drawables;
+using Android.OS;
+using AndroidLog = Android.Util.Log;
+
+namespace TgwsOne.Android;
+
+/// <summary>
+/// Keeps the proxy alive while the screen is off and the task is swiped away. The engine runs in this process;
+/// the notification is the only control the user has once the activity is gone, so stopping it must free the port.
+/// </summary>
+[Service(
+    Name = "io.github.sunsunflowerdeb.tgwsone.ProxyService",
+    Exported = false,
+    ForegroundServiceType = ForegroundService.TypeSpecialUse)]
+public sealed class ProxyService : Service
+{
+    public const string ActionStop = "io.github.sunsunflowerdeb.tgwsone.action.STOP";
+
+    private const string ChannelId = "proxy";
+    private const int NotificationId = 1443;
+
+    public static void Start(Context context) =>
+        context.StartForegroundService(new Intent(context, typeof(ProxyService)));
+
+    public static void Stop(Context context) =>
+        context.StartService(new Intent(context, typeof(ProxyService)).SetAction(ActionStop));
+
+    public override void OnCreate()
+    {
+        base.OnCreate();
+        CreateChannel();
+        EngineRuntime.Changed += OnRuntimeChanged;
+    }
+
+    public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
+    {
+        if (intent?.Action == ActionStop)
+        {
+            Task.Run(async () =>
+            {
+                await EngineRuntime.StopAsync();
+                StopForeground(StopForegroundFlags.Remove);
+                StopSelf();
+            });
+            return StartCommandResult.NotSticky;
+        }
+
+        Notification starting = BuildNotification("Запуск движка…");
+        // The specialUse type exists only from Android 14; older releases take the type from the manifest (where
+        // it is unknown to them) and simply run a plain foreground service.
+        if (OperatingSystem.IsAndroidVersionAtLeast(34))
+            StartForeground(NotificationId, starting, ForegroundService.TypeSpecialUse);
+        else
+            StartForeground(NotificationId, starting);
+        Task.Run(async () =>
+        {
+            try
+            {
+                await EngineRuntime.StartAsync(FilesDir!.AbsolutePath);
+                UpdateNotification();
+            }
+            catch (Exception ex)
+            {
+                UpdateNotification("Ошибка: " + ex.Message);
+                AndroidLog.Error("TgwsOne", "service start failed: " + ex);
+                StopSelf();
+            }
+        });
+
+        // START_STICKY: the system recreates the service after a low-memory kill, and the engine re-reads the
+        // settings from files/ itself.
+        return StartCommandResult.Sticky;
+    }
+
+    public override void OnDestroy()
+    {
+        EngineRuntime.Changed -= OnRuntimeChanged;
+        try
+        {
+            EngineRuntime.StopBlocking();
+        }
+        catch (Exception ex)
+        {
+            AndroidLog.Warn("TgwsOne", "engine teardown on destroy: " + ex.Message);
+        }
+        base.OnDestroy();
+    }
+
+    public override IBinder? OnBind(Intent? intent) => null;
+
+    private void OnRuntimeChanged()
+    {
+        try { UpdateNotification(); }
+        catch (Exception ex) { AndroidLog.Warn("TgwsOne", "notification update: " + ex.Message); }
+    }
+
+    private void UpdateNotification(string? text = null)
+    {
+        string state = text
+            ?? (EngineRuntime.IsRunning
+                ? "Работает: " + EngineRuntime.Link
+                : EngineRuntime.Error is { Length: > 0 } error ? "Ошибка: " + error : "Остановлен");
+        ((NotificationManager)GetSystemService(NotificationService)!).Notify(NotificationId, BuildNotification(state));
+    }
+
+    private Notification BuildNotification(string text)
+    {
+        PendingIntent open = PendingIntent.GetActivity(
+            this, 0, new Intent(this, typeof(MainActivity)),
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable)!;
+        PendingIntent stop = PendingIntent.GetService(
+            this, 1, new Intent(this, typeof(ProxyService)).SetAction(ActionStop),
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable)!;
+
+        return new Notification.Builder(this, ChannelId)
+            .SetContentTitle("TgwsOne")
+            .SetContentText(text)
+            .SetSmallIcon(global::Android.Resource.Drawable.StatSysDownload)
+            .SetOngoing(true)
+            .SetOnlyAlertOnce(true)
+            .SetContentIntent(open)
+            .AddAction(new Notification.Action.Builder(
+                Icon.CreateWithResource(this, global::Android.Resource.Drawable.IcDelete), "Остановить", stop).Build())
+            .Build();
+    }
+
+    private void CreateChannel()
+    {
+        var manager = (NotificationManager)GetSystemService(NotificationService)!;
+        if (manager.GetNotificationChannel(ChannelId) is not null) return;
+        manager.CreateNotificationChannel(new NotificationChannel(ChannelId, "Прокси", NotificationImportance.Low)
+        {
+            Description = "Состояние прокси TgwsOne",
+        });
+    }
+}
