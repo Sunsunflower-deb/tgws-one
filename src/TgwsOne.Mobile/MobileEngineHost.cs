@@ -1,6 +1,7 @@
 using System.Globalization;
 using TgwsOne.Core;
 using TgwsOne.Engine;
+using TgwsOne.Engine.Desync;
 
 namespace TgwsOne.Mobile;
 
@@ -36,6 +37,25 @@ public sealed class MobileEngineHost : IProxyEngineControl, IAsyncDisposable
     public bool IsRunning => _session is { IsRunning: true };
     public int Port => _session?.Port ?? 0;
 
+    /// <summary>The live engine configuration while it runs; the self-check needs the secret and port from it.</summary>
+    public EngineConfig? Config => _session?.Config;
+
+    /// <summary>How many Telegram clients are attached to the engine right now.</summary>
+    public long ActiveConnections => _session?.Engine.Stats.ConnectionsActive ?? 0;
+
+    /// <summary>
+    /// The strategy source of the running engine. Assigning it is a strategy switch: the engine closes its idle
+    /// pools while live sessions keep the stream they were opened with.
+    /// </summary>
+    public IDesyncController? Desync
+    {
+        get => _session?.Engine.Desync;
+        set
+        {
+            if (_session is { } session) session.Engine.Desync = value;
+        }
+    }
+
     public async Task<EngineStartResult> StartAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -61,7 +81,9 @@ public sealed class MobileEngineHost : IProxyEngineControl, IAsyncDisposable
             if (!start.Result.Ok || start.Session is null) return start.Result;
 
             _session = start.Session;
-            _runningHash = Fingerprint(start.Settings, AndroidSettingsStore.Load(ini));
+            AndroidSettings android = AndroidSettingsStore.Load(ini);
+            _session.Engine.Desync = CreateDesync(android);
+            _runningHash = Fingerprint(start.Settings, android);
             return start.Result;
         }
         finally
@@ -111,6 +133,19 @@ public sealed class MobileEngineHost : IProxyEngineControl, IAsyncDisposable
         if (!ProxySettingsStore.IsValidSecret(settings.Secret)) return true;
         return Fingerprint(settings, AndroidSettingsStore.Load(ini)) != _runningHash;
     }
+
+    // The stored strategy is either «Авто» or one of the built-in ids; anything else is a typo and falls back to auto.
+    private static DesyncController CreateDesync(AndroidSettings android)
+    {
+        var controller = new DesyncController();
+        controller.SetOperator(android.Provider);
+        if (android.Strategy == AutoStrategy) controller.UseAuto();
+        else if (BuiltInDesync.Find(android.Strategy) is { } strategy) controller.Select(strategy);
+        else controller.UseAuto();
+        return controller;
+    }
+
+    private const string AutoStrategy = "auto";
 
     private string Fingerprint(ProxySettings settings, AndroidSettings android)
         => EngineStarter.Hash(settings, _storage.ProxyLogPath)
