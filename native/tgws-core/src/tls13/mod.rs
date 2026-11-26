@@ -12,6 +12,8 @@
 //!   the `key_share` extension.
 //! * [`record_protection`] frames and protects records with the sequence
 //!   counter and optional padding (RFC 8446, section 5.2).
+//! * [`cert_verifier`] validates the server certificate chain, SNI name and
+//!   `CertificateVerify` signature against WebPKI trust anchors.
 //! * [`handshake`] is the client state machine that ties the pieces together.
 //!
 //! The cryptography lives in audited RustCrypto crates.  "Own stack" here means
@@ -19,11 +21,12 @@
 //! fingerprints instead of delegating to .NET `SslStream`; it does not mean
 //! re-implementing AES or X25519.
 //!
-//! Deliberately absent (RT7c): certificate-chain and signature verification,
-//! session resumption and 0-RTT.
+//! Deliberately absent: revocation (OCSP/CRL), client certificates, the
+//! platform trust store, session resumption and 0-RTT.
 
 use core::fmt;
 
+pub mod cert_verifier;
 pub mod ciphers;
 pub mod handshake;
 pub mod keyschedule;
@@ -31,6 +34,7 @@ pub mod kx;
 pub mod messages;
 pub mod record_protection;
 
+pub use cert_verifier::{FixedTimeProvider, SystemTimeProvider, TimeProvider, WebPkiVerifier};
 pub use handshake::{
     CertVerifier, CertVerifyContext, ServerCertPolicy, SkipVerifier, Tls13Client, Tls13ClientConfig,
 };
@@ -55,6 +59,12 @@ pub enum TlsError {
     UnsupportedVersion(u16),
     /// A cipher suite without a TLS 1.3 implementation was selected.
     UnsupportedCipherSuite(u16),
+    /// The server certificate chain, name or `CertificateVerify` signature was
+    /// rejected by the configured [`CertVerifier`].
+    CertificateVerificationFailed,
+    /// The `CertificateVerify` signature scheme is not supported or not
+    /// allowed in TLS 1.3.
+    UnsupportedSignatureScheme(u16),
     /// A key-exchange group other than X25519 was selected.
     UnsupportedGroup(u16),
     /// A key has the wrong length for the requested cipher suite.
@@ -87,6 +97,12 @@ impl fmt::Display for TlsError {
             }
             Self::UnsupportedCipherSuite(suite) => {
                 write!(f, "unsupported TLS cipher suite 0x{suite:04x}")
+            }
+            Self::CertificateVerificationFailed => {
+                f.write_str("server certificate verification failed")
+            }
+            Self::UnsupportedSignatureScheme(scheme) => {
+                write!(f, "unsupported TLS 1.3 signature scheme 0x{scheme:04x}")
             }
             Self::UnsupportedGroup(group) => {
                 write!(f, "unsupported key-exchange group 0x{group:04x}")

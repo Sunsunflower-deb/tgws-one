@@ -1,8 +1,8 @@
 //! Optional end-to-end check against a local `openssl s_server`.
 //!
 //! The test is ignored by default because it needs a running server.  Use
-//! `tests/tls13-e2e.sh`, which generates a throw-away certificate, starts
-//! OpenSSL on a loopback port, and then runs:
+//! `tests/tls13-e2e.sh`, which generates a throw-away CA and a server
+//! certificate signed by it, starts OpenSSL on a loopback port, and then runs:
 //!
 //! ```text
 //! cargo test --test tls13_e2e -- --ignored --nocapture
@@ -12,15 +12,21 @@
 //!
 //! * `TLS13_E2E_ADDR` — `host:port` of the server (default `127.0.0.1:9443`).
 //! * `TLS13_E2E_SNI` — SNI to send (default `localhost`).
+//! * `TLS13_E2E_CA` — DER file of the CA that signed the server certificate.
+//!   The test verifies the real chain, name and `CertificateVerify` signature
+//!   against it, so a self-signed server certificate is not trusted.
 
 use std::env;
+use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tgws_core::SplitMix64;
-use tgws_core::tls13::{ServerCertPolicy, Tls13Client, Tls13ClientConfig};
+use tgws_core::tls13::{
+    ServerCertPolicy, SystemTimeProvider, Tls13Client, Tls13ClientConfig, WebPkiVerifier,
+};
 
 fn connect_with_retry(address: &str) -> TcpStream {
     let deadline = SystemTime::now() + Duration::from_secs(10);
@@ -57,9 +63,18 @@ fn openssl_s_server_tls13_get() {
         .next()
         .expect("address resolves to at least one socket");
 
+    let ca_path = env::var("TLS13_E2E_CA").expect(
+        "TLS13_E2E_CA must point to the DER-encoded CA certificate; use tests/tls13-e2e.sh",
+    );
+    let ca_der = fs::read(&ca_path)
+        .unwrap_or_else(|error| panic!("could not read TLS13_E2E_CA {ca_path}: {error}"));
+    let verifier = WebPkiVerifier::from_der_roots(&[ca_der], Box::new(SystemTimeProvider))
+        .expect("the e2e CA is a valid trust anchor");
+
     let config = Tls13ClientConfig::new(server_name.clone(), Box::new(SplitMix64::new(seed())))
         .with_alpn(&[b"http/1.1"])
-        .with_cert_policy(ServerCertPolicy::Skip);
+        .with_cert_policy(ServerCertPolicy::WebPki)
+        .with_verifier(Box::new(verifier));
 
     let mut client = Tls13Client::new(config);
     let mut stream = connect_with_retry(&address);

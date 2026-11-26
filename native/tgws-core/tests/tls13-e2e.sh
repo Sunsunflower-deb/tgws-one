@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # End-to-end TLS 1.3 client check against a local `openssl s_server`.
 #
-# The script generates a throw-away self-signed certificate, starts s_server on
-# loopback with TLS_AES_128_GCM_SHA256 only, runs the ignored Rust test that
-# performs a real handshake and a protected `GET /`, then prints OK or FAIL.
+# The script generates a throw-away mini-CA and a server certificate signed by
+# it, starts s_server on loopback with TLS_AES_128_GCM_SHA256 only, then runs
+# the ignored Rust test that performs a real handshake and a protected `GET /`.
+# The client verifies the real chain, SNI name (`localhost`) and
+# CertificateVerify signature against the generated CA, so a self-signed
+# certificate would be rejected.
 #
 # Requirements: bash, openssl with TLS 1.3 support, cargo/rustc.
 # Set TLS13_E2E_PORT to override the default port 9443.
@@ -47,8 +50,30 @@ cleanup() {
 trap cleanup EXIT
 
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
-  -keyout "$tmp/key.pem" -out "$tmp/cert.pem" -days 1 \
-  -subj "/CN=localhost" >"$tmp/req.log" 2>&1
+  -keyout "$tmp/ca.key" -out "$tmp/ca.pem" -days 2 \
+  -subj "/CN=tgws e2e test CA" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" >"$tmp/ca.log" 2>&1
+
+openssl req -newkey rsa:2048 -sha256 -nodes \
+  -keyout "$tmp/key.pem" -out "$tmp/server.csr" \
+  -subj "/CN=localhost" >"$tmp/server.csr.log" 2>&1
+
+cat >"$tmp/server.ext" <<'EOF'
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:localhost
+EOF
+
+openssl x509 -req -in "$tmp/server.csr" \
+  -CA "$tmp/ca.pem" -CAkey "$tmp/ca.key" \
+  -CAcreateserial -CAserial "$tmp/ca.srl" \
+  -out "$tmp/cert.pem" -days 1 -sha256 \
+  -extfile "$tmp/server.ext" >"$tmp/sign.log" 2>&1
+
+openssl x509 -in "$tmp/ca.pem" -outform DER -out "$tmp/ca.der" \
+  >>"$tmp/sign.log" 2>&1
 
 openssl s_server -www -tls1_3 -accept "127.0.0.1:$port" \
   -cert "$tmp/cert.pem" -key "$tmp/key.pem" \
@@ -60,6 +85,7 @@ status=0
   cd "$crate_dir"
   TLS13_E2E_ADDR="127.0.0.1:$port" \
   TLS13_E2E_SNI="localhost" \
+  TLS13_E2E_CA="$tmp/ca.der" \
     cargo test --test tls13_e2e -- --ignored --nocapture
 ) || status=$?
 

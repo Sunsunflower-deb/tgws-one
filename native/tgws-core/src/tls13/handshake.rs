@@ -14,9 +14,9 @@
 //!    [`Tls13Client::take_application_data`].
 //!
 //! Transcript hashes cover every handshake message (header included) in wire
-//! order.  Certificate-chain and `CertificateVerify` signature verification is
-//! deliberately deferred to RT7c; see [`ServerCertPolicy`] and
-//! [`CertVerifier`].
+//! order.  The server certificate chain and `CertificateVerify` signature are
+//! checked by the configured [`CertVerifier`]; the default policy uses the
+//! [`crate::tls13::cert_verifier::WebPkiVerifier`] with Mozilla's roots.
 
 use sha2::{Digest, Sha256};
 
@@ -26,6 +26,7 @@ use crate::tls::record::{
     CONTENT_TYPE_HANDSHAKE, MAX_PLAINTEXT,
 };
 use crate::tls13::TlsError;
+use crate::tls13::cert_verifier::WebPkiVerifier;
 use crate::tls13::keyschedule::{CipherSuite, HASH_LEN, KeySchedule, TrafficKeys, finished_key};
 use crate::tls13::kx::X25519KeyPair;
 use crate::tls13::messages::{
@@ -42,21 +43,22 @@ const HANDSHAKE_NEW_SESSION_TICKET: u8 = 4;
 /// How the client treats the server certificate chain.
 ///
 /// TLS 1.3 peers authenticate with a certificate chain and a
-/// `CertificateVerify` signature.  RT7b only builds the state machine, so both
-/// policies stop short of a real chain validation:
+/// `CertificateVerify` signature.  The policy selects whether that
+/// authentication is enforced:
 ///
-/// * [`ServerCertPolicy::Skip`] accepts any certificate.  It exists only for
-///   tests and network namespaces and must not be used for real traffic.
-/// * [`ServerCertPolicy::VerifyLater`] invokes a [`CertVerifier`] with the
-///   transcript hash and the raw signature.  The default verifier is
-///   [`SkipVerifier`], a documented placeholder until RT7c adds chain and
-///   signature checking.
+/// * [`ServerCertPolicy::WebPki`] is the default.  It invokes the configured
+///   [`CertVerifier`], which by default is
+///   [`crate::tls13::cert_verifier::WebPkiVerifier`] with Mozilla's root CA
+///   bundle and the system clock.
+/// * [`ServerCertPolicy::Skip`] accepts any certificate without checking the
+///   chain, name or signature.  It exists only for tests and network
+///   namespaces and must not be used for real traffic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerCertPolicy {
+    /// Verify the chain, name and `CertificateVerify` signature.
+    WebPki,
     /// Accept any certificate.  Tests and network namespaces only.
     Skip,
-    /// Defer verification to a [`CertVerifier`] (RT7c work in progress).
-    VerifyLater,
 }
 
 /// Input handed to a [`CertVerifier`] for one `CertificateVerify` message.
@@ -65,8 +67,10 @@ pub struct CertVerifyContext<'a> {
     /// `Transcript-Hash` through the server `Certificate` message, before the
     /// `CertificateVerify` message itself is added.
     pub transcript_hash: &'a [u8],
-    /// Leaf certificate in DER form, when the server sent one.
-    pub leaf_certificate: Option<&'a [u8]>,
+    /// SNI host name the client connected to.
+    pub server_name: &'a str,
+    /// DER-encoded certificate chain in the order it arrived on the wire.
+    pub certificate_chain: &'a [Vec<u8>],
     /// Signature scheme from the `CertificateVerify` message.
     pub algorithm: u16,
     /// Raw signature bytes from the `CertificateVerify` message.
@@ -75,23 +79,24 @@ pub struct CertVerifyContext<'a> {
 
 /// Certificate and `CertificateVerify` verification hook.
 ///
-/// The full implementation belongs to RT7c.  Keeping the trait here lets the
-/// handshake express its intent without pretending to validate certificates.
+/// The default implementation is
+/// [`crate::tls13::cert_verifier::WebPkiVerifier`].  [`SkipVerifier`] is kept
+/// for tests and for the explicit [`ServerCertPolicy::Skip`] escape hatch.
 pub trait CertVerifier {
-    /// Checks one `CertificateVerify` message.
+    /// Checks one server certificate chain and its `CertificateVerify`
+    /// signature.
     ///
     /// # Errors
     ///
-    /// Returns [`TlsError`] when a future implementation rejects the chain or
-    /// the signature.
+    /// Returns [`TlsError`] when the chain is untrusted, the certificate is
+    /// expired or not valid for the SNI name, or the signature is invalid.
     fn verify(&self, context: &CertVerifyContext<'_>) -> Result<(), TlsError>;
 }
 
-/// Placeholder verifier that accepts everything.
+/// Test-only verifier that accepts everything.
 ///
-/// It performs no chain validation and no signature check.  It is the default
-/// for both [`ServerCertPolicy`] variants so the state machine is testable
-/// before RT7c lands.
+/// It performs no chain validation, no name check and no signature check.  Use
+/// it only with [`ServerCertPolicy::Skip`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SkipVerifier;
 
@@ -107,7 +112,7 @@ pub struct Tls13ClientConfig {
     pub server_name: String,
     /// ALPN protocols in preference order; defaults to `h2` then `http/1.1`.
     pub alpn: Vec<Vec<u8>>,
-    /// Certificate policy; defaults to [`ServerCertPolicy::Skip`].
+    /// Certificate policy; defaults to [`ServerCertPolicy::WebPki`].
     pub cert_policy: ServerCertPolicy,
     /// Protected-record padding block; `0` disables padding.
     pub padding_block: usize,
@@ -116,17 +121,17 @@ pub struct Tls13ClientConfig {
 }
 
 impl Tls13ClientConfig {
-    /// Creates a configuration with the default ALPN list and certificate
-    /// policy.
+    /// Creates a configuration with the default ALPN list, Mozilla's root CA
+    /// bundle and a real certificate verifier.
     #[must_use]
     pub fn new(server_name: impl Into<String>, rng: Box<dyn Random32>) -> Self {
         Self {
             server_name: server_name.into(),
             alpn: vec![b"h2".to_vec(), b"http/1.1".to_vec()],
-            cert_policy: ServerCertPolicy::Skip,
+            cert_policy: ServerCertPolicy::WebPki,
             padding_block: 0,
             rng,
-            verifier: Box::new(SkipVerifier),
+            verifier: Box::new(WebPkiVerifier::default()),
         }
     }
 
@@ -151,7 +156,7 @@ impl Tls13ClientConfig {
         self
     }
 
-    /// Installs a certificate verifier used by [`ServerCertPolicy::VerifyLater`].
+    /// Installs a certificate verifier used by [`ServerCertPolicy::WebPki`].
     #[must_use]
     pub fn with_verifier(mut self, verifier: Box<dyn CertVerifier>) -> Self {
         self.verifier = verifier;
@@ -187,7 +192,8 @@ pub struct Tls13Client {
     outgoing: Option<RecordProtector>,
     incoming: Option<RecordUnprotector>,
     negotiated_alpn: Option<Vec<u8>>,
-    leaf_certificate: Option<Vec<u8>>,
+    certificate_chain: Vec<Vec<u8>>,
+    certificate_verified: bool,
 }
 
 impl Tls13Client {
@@ -213,7 +219,8 @@ impl Tls13Client {
             outgoing: None,
             incoming: None,
             negotiated_alpn: None,
-            leaf_certificate: None,
+            certificate_chain: Vec::new(),
+            certificate_verified: false,
         }
     }
 
@@ -444,10 +451,12 @@ impl Tls13Client {
             HANDSHAKE_CERTIFICATE => {
                 self.require_handshake()?;
                 let certificate = Certificate::parse(message)?;
-                self.leaf_certificate = certificate
+                self.certificate_chain = certificate
                     .entries
-                    .first()
-                    .map(|entry| entry.certificate.to_vec());
+                    .iter()
+                    .map(|entry| entry.certificate.to_vec())
+                    .collect();
+                self.certificate_verified = false;
                 self.transcript.extend_from_slice(message);
                 Ok(())
             }
@@ -549,18 +558,30 @@ impl Tls13Client {
         Ok(())
     }
 
-    fn verify_certificate_verify(&self, algorithm: u16, signature: &[u8]) -> Result<(), TlsError> {
+    fn verify_certificate_verify(
+        &mut self,
+        algorithm: u16,
+        signature: &[u8],
+    ) -> Result<(), TlsError> {
         if self.config.cert_policy == ServerCertPolicy::Skip {
+            self.certificate_verified = true;
             return Ok(());
         }
-        let transcript_hash = self.transcript_hash();
-        let context = CertVerifyContext {
-            transcript_hash: &transcript_hash,
-            leaf_certificate: self.leaf_certificate.as_deref(),
-            algorithm,
-            signature,
+        let result = {
+            let transcript_hash = self.transcript_hash();
+            let context = CertVerifyContext {
+                transcript_hash: &transcript_hash,
+                server_name: &self.config.server_name,
+                certificate_chain: &self.certificate_chain,
+                algorithm,
+                signature,
+            };
+            self.config.verifier.verify(&context)
         };
-        self.config.verifier.verify(&context)
+        if result.is_ok() {
+            self.certificate_verified = true;
+        }
+        result
     }
 
     fn handle_server_finished(
@@ -568,6 +589,9 @@ impl Tls13Client {
         verify_data: &[u8],
         message: &[u8],
     ) -> Result<(), TlsError> {
+        if !self.certificate_verified {
+            return Err(TlsError::CertificateVerificationFailed);
+        }
         let expected = self.server_verify_data()?;
         if !constant_time_eq(&expected, verify_data) {
             return Err(TlsError::AeadFailure);
@@ -1014,7 +1038,8 @@ mod tests {
     #[test]
     fn full_handshake_against_mini_server() {
         let config = Tls13ClientConfig::new("example.test", Box::new(SplitMix64::new(7)))
-            .with_alpn(&[b"h2", b"http/1.1"]);
+            .with_alpn(&[b"h2", b"http/1.1"])
+            .with_cert_policy(ServerCertPolicy::Skip);
         let mut client = Tls13Client::new(config);
 
         let client_hello = client.start().expect("start");
@@ -1104,12 +1129,28 @@ mod tests {
 
     #[test]
     fn client_rejects_tampered_server_finished() {
-        let config = Tls13ClientConfig::new("example.test", Box::new(SplitMix64::new(11)));
+        let config = Tls13ClientConfig::new("example.test", Box::new(SplitMix64::new(11)))
+            .with_cert_policy(ServerCertPolicy::Skip);
         let mut client = Tls13Client::new(config);
         let client_hello = client.start().expect("start");
         let flight = build_server_flight(&client_hello, true);
 
         assert_eq!(client.advance(&flight.bytes), Err(TlsError::AeadFailure));
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn default_config_rejects_untrusted_server_certificate() {
+        let config = Tls13ClientConfig::new("example.test", Box::new(SplitMix64::new(19)));
+        assert_eq!(config.cert_policy, ServerCertPolicy::WebPki);
+        let mut client = Tls13Client::new(config);
+        let client_hello = client.start().expect("start");
+        let flight = build_server_flight(&client_hello, false);
+
+        assert_eq!(
+            client.advance(&flight.bytes),
+            Err(TlsError::CertificateVerificationFailed)
+        );
         assert!(!client.is_connected());
     }
 
