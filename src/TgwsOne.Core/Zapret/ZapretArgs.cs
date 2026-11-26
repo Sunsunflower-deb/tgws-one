@@ -1,4 +1,4 @@
-﻿namespace TgwsOne.Core.Zapret;
+namespace TgwsOne.Core.Zapret;
 
 /// <summary>
 /// The list files a run reads (full paths): the targets are admin-owned, the exclusions service-written.
@@ -29,9 +29,12 @@ public static class ZapretArgs
     /// </summary>
     public static IReadOnlyList<string> Build(OsKind os, ZapretBundle bundle, ZapretLists lists, string strategyId,
                                               string stateDir, DesyncPart? custom = null, string? debugFile = null,
-                                              ZapretScope scope = ZapretScope.Telegram)
+                                              ZapretScope scope = ZapretScope.Telegram,
+                                              IReadOnlyList<string>? rotation = null)
     {
         bool auto = strategyId == BuiltInStrategies.Auto;
+        // Which strategies auto walks: the universal set unless the administrator gave this provider its own list.
+        IReadOnlyList<string> steps = rotation is { Count: > 0 } ? rotation : BuiltInStrategies.Rotation;
         var blobs = new List<Blob>();
         var extraInits = new List<string>();
         var extraBlobs = new List<string>();
@@ -48,9 +51,9 @@ public static class ZapretArgs
                 "--in-range=x",
                 "--payload=tls_client_hello",
             ];
-            for (int i = 0; i < BuiltInStrategies.Rotation.Count; i++)
+            for (int i = 0; i < steps.Count; i++)
             {
-                DesyncPart part = BuiltInStrategies.Part(BuiltInStrategies.Rotation[i]);
+                DesyncPart part = BuiltInStrategies.Part(steps[i]);
                 blobs.AddRange(part.Blobs);
                 body.AddRange(part.Args.Select(a => $"{a}:strategy={i + 1}"));
             }

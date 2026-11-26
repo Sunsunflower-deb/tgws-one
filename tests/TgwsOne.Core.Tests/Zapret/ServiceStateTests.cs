@@ -1,4 +1,4 @@
-﻿using TgwsOne.Core.Zapret;
+using TgwsOne.Core.Zapret;
 
 namespace TgwsOne.Core.Tests.Zapret;
 
@@ -21,7 +21,8 @@ public class ServiceStateTests
         new ServiceState(false, "split").Save(ini);
 
         Assert.Equal(new ServiceState(false, "split"), ServiceState.Load(ini));
-        Assert.Equal("[zapret]\nenabled=0\nstrategy=split\nscope=telegram\n", File.ReadAllText(ini).Replace("\r\n", "\n"));
+        Assert.Equal("[zapret]\nenabled=0\nstrategy=split\nscope=telegram\nprovider=universal\n",
+                     File.ReadAllText(ini).Replace("\r\n", "\n"));
 
         new ServiceState(true, "custom:mine").Save(ini);
         Assert.Equal(new ServiceState(true, "custom:mine"), ServiceState.Load(ini));

@@ -170,7 +170,8 @@ public sealed class ProxyEngine : IAsyncDisposable
     {
         _stats.ConnectionOpened();
         string label = "?";
-        NetworkStream stream;
+        // Stream, not NetworkStream: the fake-TLS tunnel wraps the socket once the ClientHello has been answered.
+        Stream stream;
         try
         {
             label = client.Client.RemoteEndPoint is IPEndPoint ep ? $"{ep.Address}:{ep.Port}" : $"?{id}";
@@ -204,19 +205,29 @@ public sealed class ProxyEngine : IAsyncDisposable
             byte[] first = new byte[1];
             if (!await ReadExactlyAsync(stream, first, ReadTimeout, ct).ConfigureAwait(false)) return;
 
-            List<byte> handshake = [first[0]];
-            if (first[0] == 0x16 && _config.FakeTlsDomain.Length > 0)
+            byte[] handshake;
+            if (first[0] == FakeTls.RecordHandshake && _config.FakeTlsDomain.Length > 0)
             {
-                await MaskAsync(stream, handshake, label, ct).ConfigureAwait(false);
-                return;
+                // An ee-client carries its HMAC in the ClientHello random; anyone else has to see the masking site.
+                // Every branch of the fake-TLS path writes an answer before it closes, so a prober never gets a
+                // connection that simply went quiet (see OpenFakeTlsAsync).
+                Stream? tunnel = await OpenFakeTlsAsync(stream, first[0], label, ct).ConfigureAwait(false);
+                if (tunnel is null) return;
+                stream = tunnel;
+                byte[] inner = await ReadExactlyAsync(stream, MtProtoConstants.HandshakeLength, ReadTimeout, ct).ConfigureAwait(false)
+                    ?? [];
+                if (inner.Length != MtProtoConstants.HandshakeLength) return;
+                handshake = inner;
+            }
+            else
+            {
+                byte[] rest = await ReadExactlyAsync(stream, MtProtoConstants.HandshakeLength - 1, ReadTimeout, ct).ConfigureAwait(false)
+                    ?? [];
+                if (rest.Length != MtProtoConstants.HandshakeLength - 1) return;
+                handshake = [first[0], .. rest];
             }
 
-            byte[] rest = await ReadExactlyAsync(stream, MtProtoConstants.HandshakeLength - 1, ReadTimeout, ct).ConfigureAwait(false)
-                ?? [];
-            if (rest.Length != MtProtoConstants.HandshakeLength - 1) return;
-            handshake.AddRange(rest);
-
-            if (!Obfuscated2.TryParseClientHandshake(handshake.ToArray(), _secret,
+            if (!Obfuscated2.TryParseClientHandshake(handshake, _secret,
                     out int dc, out bool isMedia, out uint protoTag, out byte[] clientPrekeyIv))
             {
                 _stats.BadHandshake();
@@ -612,34 +623,104 @@ public sealed class ProxyEngine : IAsyncDisposable
         }
     }
 
-    // Fake TLS is not used by tgws-one (its link is dd-secret, not ee-secret). A TLS-looking first byte is
-    // relayed to the masking domain verbatim, so a prober sees a real site; a real Telegram ee-client cannot be
-    // validated here and is not supported by the native engine.
-    private async Task MaskAsync(Stream client, List<byte> prefix, string label, CancellationToken ct)
+    /// <summary>
+    /// Answers a TLS-looking ClientHello and returns the stream the MTProto handshake is then read from, or null when the
+    /// connection was answered some other way (relayed to the masking site, or refused with a TLS alert).
+    /// <para>
+    /// Nothing on this path is allowed to end in silence: a client holding an <c>ee</c>-secret gets the fake-TLS answer
+    /// and a tunneling stream, anything else is handed to the masking domain, and if that cannot be reached the client
+    /// is refused with a TLS alert. That is what keeps a prober from telling this port apart from a real site by the way
+    /// it goes quiet.
+    /// </para>
+    /// </summary>
+    private async Task<Stream?> OpenFakeTlsAsync(Stream stream, byte firstByte, string label, CancellationToken ct)
+    {
+        byte[]? hello = await ReadFirstRecordAsync(stream, firstByte, ct).ConfigureAwait(false);
+        if (hello is null)
+        {
+            await RefuseAsync(stream, FakeTls.AlertUnexpectedMessage, label, ct).ConfigureAwait(false);
+            return null;
+        }
+
+        if (FakeTls.TryVerifyClientHello(hello, _secret, out FakeTlsClientHello parsed))
+        {
+            ClientHelloInfo info = FakeTls.ParseClientHello(hello);
+            byte[] answer = FakeTls.BuildResponse(_secret, parsed.ClientRandom, parsed.SessionId, info);
+            try
+            {
+                await stream.WriteAsync(answer, ct).ConfigureAwait(false);
+                await stream.FlushAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
+            {
+                _log.Debug($"[{label}] fake TLS: the client went away while the answer was written");
+                return null;
+            }
+
+            _stats.Masked();
+            _log.Debug($"[{label}] fake TLS handshake answered (session id {parsed.SessionId.Length} bytes)");
+            return new FakeTlsStream(stream);
+        }
+
+        // Not an ee-client: relay the hello to the masking domain so whoever probed sees the real site.
+        if (await MaskAsync(stream, hello, label, ct).ConfigureAwait(false)) return null;
+
+        // The masking site is unreachable or dropped the connection. Refusing as a TLS endpoint is the only answer
+        // that keeps the port indistinguishable: a silent close would say "something here swallowed my ClientHello".
+        await RefuseAsync(stream, FakeTls.AlertHandshakeFailure, label, ct).ConfigureAwait(false);
+        return null;
+    }
+
+    /// <summary>The first TLS record: the already-read first byte plus the rest of its header and payload.</summary>
+    private static async Task<byte[]?> ReadFirstRecordAsync(Stream stream, byte firstByte, CancellationToken ct)
+    {
+        byte[] rest = await ReadExactlyAsync(stream, 4, ReadTimeout, ct).ConfigureAwait(false) ?? [];
+        if (rest.Length != 4) return null;
+
+        byte[] header = [firstByte, rest[0], rest[1], rest[2], rest[3]];
+        if (!FakeTls.TryReadRecordLength(header, out int payloadLength)) return null;
+        if (payloadLength > FakeTls.MaxRecordPayload) return null;
+
+        byte[] payload = payloadLength == 0
+            ? []
+            : await ReadExactlyAsync(stream, payloadLength, ReadTimeout, ct).ConfigureAwait(false) ?? [];
+        return payload.Length == payloadLength ? [.. header, .. payload] : null;
+    }
+
+    /// <summary>
+    /// Relays the connection to the masking domain. True when the conversation went through it; false only when nothing
+    /// was written to the client, so the caller still owes it an answer.
+    /// </summary>
+    private async Task<bool> MaskAsync(Stream client, byte[] initialData, string label, CancellationToken ct)
     {
         string domain = _config.FakeTlsDomain;
+        using var tcp = new TcpClient();
+        NetworkStream upstream;
         try
         {
-            using var tcp = new TcpClient();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
             await tcp.ConnectAsync(domain, 443, cts.Token).ConfigureAwait(false);
-            NetworkStream upstream = tcp.GetStream();
-            await upstream.WriteAsync(prefix.ToArray(), cts.Token).ConfigureAwait(false);
+            upstream = tcp.GetStream();
+            await upstream.WriteAsync(initialData, cts.Token).ConfigureAwait(false);
             await upstream.FlushAsync(cts.Token).ConfigureAwait(false);
             _stats.Masked();
             _log.Debug($"[{label}] masking -> {domain}:443");
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            Task up = Relay(client, upstream, linked.Token);
-            Task down = Relay(upstream, client, linked.Token);
-            await Task.WhenAny(up, down).ConfigureAwait(false);
-            await linked.CancelAsync().ConfigureAwait(false);
-            await Task.WhenAll(up, down).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException)
         {
-            _log.Debug($"[{label}] masking failed: {ex.Message}");
+            // Nothing reached the client: the caller answers with an alert instead of closing silently.
+            _log.Debug($"[{label}] masking to {domain}:443 failed: {ex.Message}");
+            return false;
         }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task up = Relay(client, upstream, linked.Token);
+        Task down = Relay(upstream, client, linked.Token);
+        await Task.WhenAny(up, down).ConfigureAwait(false);
+        await linked.CancelAsync().ConfigureAwait(false);
+        await Task.WhenAll(up, down).ConfigureAwait(false);
+        return true;
 
         static async Task Relay(Stream from, Stream to, CancellationToken ct)
         {
@@ -655,6 +736,23 @@ public sealed class ProxyEngine : IAsyncDisposable
                 }
             }
             catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException) { }
+        }
+    }
+
+    /// <summary>Ends a refused connection with a TLS alert record, never with a bare close.</summary>
+    private async Task RefuseAsync(Stream client, byte alert, string label, CancellationToken ct)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
+            await client.WriteAsync(FakeTls.Alert(alert), cts.Token).ConfigureAwait(false);
+            await client.FlushAsync(cts.Token).ConfigureAwait(false);
+            _log.Debug($"[{label}] fake TLS: refused with alert 0x{alert:x2}");
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
+        {
+            // the client is already gone; nothing left to look plausible for
         }
     }
 

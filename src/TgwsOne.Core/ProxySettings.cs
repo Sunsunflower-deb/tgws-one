@@ -12,12 +12,14 @@ public sealed record ProxySettings(
     IPAddress Host, int Port, IReadOnlyList<DcEntry> DcMap,
     bool CfProxy, bool H2, bool NoSecure, bool Verbose,
     IReadOnlyList<string> CfDomains, IReadOnlyList<string> WorkerDomains,
-    int BufKb, int PoolSize, int LogMaxMb, string Secret);
+    int BufKb, int PoolSize, int LogMaxMb, string Secret,
+    string FakeTlsDomain = "");
 
 /// <summary>Raw values as a settings window holds them (SP3 binds to this).</summary>
 public sealed record ProxyForm(
     string Host, string Port, string DcMap, bool CfProxy, bool H2, bool NoSecure, bool Verbose,
-    string CfDomains, string WorkerDomains, string BufKb, string PoolSize, string LogMaxMb);
+    string CfDomains, string WorkerDomains, string BufKb, string PoolSize, string LogMaxMb,
+    string FakeTlsDomain = "");
 
 /// <summary>A validation problem; <see cref="Field"/> is the <see cref="ProxyForm"/> property name.</summary>
 public sealed record FieldError(string Field, string Message);
@@ -55,7 +57,9 @@ public static class ProxySettingsStore
             WorkerDomains: Str("workerdomains", ""),
             BufKb: Num("bufkb", DefaultBufKb),
             PoolSize: Num("poolsize", DefaultPoolSize),
-            LogMaxMb: Num("logmaxmb", DefaultLogMaxMb));
+            LogMaxMb: Num("logmaxmb", DefaultLogMaxMb),
+            // Empty means "no fake TLS": the link stays a dd-secret and nothing is masked.
+            FakeTlsDomain: Str("faketls", ""));
     }
 
     /// <summary>Validates a form. All problems are reported, in field order; settings are null if there are any.</summary>
@@ -75,10 +79,15 @@ public static class ProxySettingsStore
             errors.Add(new FieldError(nameof(ProxyForm.PoolSize), "Пул WS — не меньше 0."));
         if (!TryInt(form.LogMaxMb, 1, out int logMaxMb))
             errors.Add(new FieldError(nameof(ProxyForm.LogMaxMb), "Размер лога — не меньше 1 МБ."));
+        bool hasDomain = form.FakeTlsDomain.Trim().Length > 0;
+        if (hasDomain && !TryDomain(form.FakeTlsDomain, out string fakeTlsDomain))
+            errors.Add(new FieldError(nameof(ProxyForm.FakeTlsDomain),
+                "Домен для маскировки — имя вида www.example.com, без схемы и пути."));
 
         if (errors.Count > 0) return (null, errors);
         return (new ProxySettings(host!, port, dcMap!, form.CfProxy, form.H2, form.NoSecure, form.Verbose,
-            SplitList(form.CfDomains), SplitList(form.WorkerDomains), bufKb, poolSize, logMaxMb, secret), errors);
+            SplitList(form.CfDomains), SplitList(form.WorkerDomains), bufKb, poolSize, logMaxMb, secret,
+            hasDomain ? NormalizeDomain(form.FakeTlsDomain) : ""), errors);
     }
 
     /// <summary>
@@ -102,7 +111,8 @@ public static class ProxySettingsStore
             BufKb: TryInt(f.BufKb, 4, out int bufKb) ? bufKb : DefaultBufKb,
             PoolSize: TryInt(f.PoolSize, 0, out int poolSize) ? poolSize : DefaultPoolSize,
             LogMaxMb: TryInt(f.LogMaxMb, 1, out int logMaxMb) ? logMaxMb : DefaultLogMaxMb,
-            Secret: IsValidSecret(secret) ? secret : "");
+            Secret: IsValidSecret(secret) ? secret : "",
+            FakeTlsDomain: TryDomain(f.FakeTlsDomain, out string fakeTls) ? NormalizeDomain(fakeTls) : "");
     }
 
     /// <summary>Writes the <c>[proxy]</c> keys and <c>[app] secret</c>, then saves the file.</summary>
@@ -121,6 +131,7 @@ public static class ProxySettingsStore
         ini.Set("proxy", "bufkb", s.BufKb.ToString(CultureInfo.InvariantCulture));
         ini.Set("proxy", "poolsize", s.PoolSize.ToString(CultureInfo.InvariantCulture));
         ini.Set("proxy", "logmaxmb", s.LogMaxMb.ToString(CultureInfo.InvariantCulture));
+        ini.Set("proxy", "faketls", s.FakeTlsDomain);
         ini.Set("app", "secret", s.Secret);
         ini.Save();
     }
@@ -162,6 +173,24 @@ public static class ProxySettingsStore
     }
 
     private static bool TryHost(string s, [NotNullWhen(true)] out IPAddress? ip) => IPAddress.TryParse(s.Trim(), out ip);
+
+    // The masking domain goes into a tg:// link and into the engine's --fake-tls-domain: a bare host name only.
+    private static bool TryDomain(string raw, out string domain)
+    {
+        domain = raw.Trim().TrimEnd('.').ToLowerInvariant();
+        if (domain.Length is 0 or > 253) return false;
+        string[] labels = domain.Split('.');
+        if (labels.Length < 2) return false;
+        foreach (string label in labels)
+        {
+            if (label.Length is 0 or > 63) return false;
+            if (label[0] == '-' || label[^1] == '-') return false;
+            if (!label.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')) return false;
+        }
+        return labels[^1].Any(char.IsAsciiLetter);       // a top-level domain is never all digits
+    }
+
+    private static string NormalizeDomain(string raw) => raw.Trim().TrimEnd('.').ToLowerInvariant();
 
     private static bool TryPort(string s, out int port)
         => int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out port) && port is >= 1 and <= 65535;

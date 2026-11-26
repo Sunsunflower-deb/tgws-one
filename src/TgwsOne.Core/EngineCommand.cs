@@ -32,6 +32,7 @@ public static class EngineCommand
         if (s.NoSecure) a.Add("--no-secure");
         foreach (string d in s.CfDomains) { a.Add("--cfproxy-domain"); a.Add(d); }
         foreach (string d in s.WorkerDomains) { a.Add("--cfproxy-worker-domain"); a.Add(d); }
+        if (s.FakeTlsDomain.Length > 0) { a.Add("--fake-tls-domain"); a.Add(s.FakeTlsDomain); }
         if (s.Verbose) a.Add("-v");
 
         a.AddRange(["--log-file", paths.ProxyLogFile, "--log-max-mb", Num(s.LogMaxMb), "--log-backups", "1"]);

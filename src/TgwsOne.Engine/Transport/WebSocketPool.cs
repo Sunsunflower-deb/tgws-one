@@ -247,20 +247,27 @@ public sealed class WebSocketPool : IAsyncDisposable
 
     private async Task<RawWebSocket?> ConnectOneAsync(string targetIp, IReadOnlyList<string> domains, string path)
     {
+        // Fronting borrows the name of the masking site: the connection is dialed to the data centre's IP, while the
+        // ClientHello says the site. Without that site there is nothing to borrow, so the plain route is the only one.
+        string? frontSni = _config.FakeTlsDomain.Length > 0 ? _config.FakeTlsDomain : null;
+
         foreach (string domain in domains)
         {
-            bool frontFirst = _tryFrontingFirst;
-            foreach (bool fronted in frontFirst ? new[] { true, false } : new[] { false, true })
+            bool[] order = frontSni is not null && _tryFrontingFirst ? [true, false] : [false, true];
+            if (frontSni is null) order = [false];
+            foreach (bool fronted in order)
             {
                 try
                 {
                     var timeout = TimeSpan.FromSeconds(fronted ? 7 : 8);
                     RawWebSocket ws = await RawWebSocket.ConnectAsync(
                         targetIp, domain, timeout, path,
-                        sni: fronted ? "sprinthost.ru" : null,
+                        sni: fronted ? frontSni : null,
                         secure: true, bufferSize: _config.BufferSize, ct: _stop.Token).ConfigureAwait(false);
-                    _tryFrontingFirst = fronted;
+                    if (frontSni is not null) _tryFrontingFirst = fronted;
                     if (fronted) _stats.Fronting();
+                    // A pooled socket sits idle between clients: pings with jitter keep it alive and unsuspicious.
+                    ws.StartPingLoop(_config.PingIntervalSeconds, _config.PingJitterSeconds, _stop.Token);
                     _log.Debug($"WS pool connected {domain}{path} via {targetIp} (fronting={fronted})");
                     return ws;
                 }

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
 namespace TgwsOne.Core.Zapret;
 
@@ -236,7 +236,8 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
         {
             return (null, "неизвестная стратегия");
         }
-        return (ZapretArgs.Build(_os, _bundle, _paths.Lists, id, _paths.StateDir, custom, _debugFile, _state.Scope), null);
+        return (ZapretArgs.Build(_os, _bundle, _paths.Lists, id, _paths.StateDir, custom, _debugFile, _state.Scope,
+            ProviderStrategies.Rotation(_paths.StrategiesDir, _state.Provider)), null);
     }
 
     private ControlResponse Ok() => new(true, Status: BuildStatus());

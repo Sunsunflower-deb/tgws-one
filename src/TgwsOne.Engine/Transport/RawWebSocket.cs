@@ -37,6 +37,7 @@ public sealed class RawWebSocket : IAsyncDisposable
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly List<byte> _fragment = [];
     private volatile bool _closed;
+    private Task? _pingLoop;
 
     private RawWebSocket(Stream stream, Socket? socket, ExactStreamReader reader)
     {
@@ -366,6 +367,45 @@ public sealed class RawWebSocket : IAsyncDisposable
             data.CopyTo(frame.AsSpan(offset));
         }
         return frame;
+    }
+
+    /// <summary>The delay before the next keep-alive ping: the interval plus a random part, so no fixed rhythm shows.</summary>
+    public static TimeSpan NextPingDelay(int intervalSeconds, int jitterSeconds, Random rng)
+    {
+        int jitterMs = Math.Max(0, jitterSeconds) * 1000;
+        int extraMs = jitterMs == 0 ? 0 : rng.Next(jitterMs + 1);
+        return TimeSpan.FromSeconds(Math.Max(1, intervalSeconds)) + TimeSpan.FromMilliseconds(extraMs);
+    }
+
+    /// <summary>
+    /// Sends a WebSocket ping every interval plus a random jitter until the socket closes or <paramref name="ct"/> fires.
+    /// A pooled connection waits minutes between clients; an idle socket that emits nothing for that long is a pattern of
+    /// its own, and the answer to a ping shows the peer is still there without waiting for a client to notice.
+    /// </summary>
+    public void StartPingLoop(int intervalSeconds, int jitterSeconds, CancellationToken ct)
+    {
+        if (_pingLoop is not null || intervalSeconds <= 0) return;
+        _pingLoop = Task.Run(() => PingLoopAsync(intervalSeconds, jitterSeconds, ct), CancellationToken.None);
+    }
+
+    private async Task PingLoopAsync(int intervalSeconds, int jitterSeconds, CancellationToken ct)
+    {
+        try
+        {
+            while (!_closed && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(NextPingDelay(intervalSeconds, jitterSeconds, Random.Shared), ct).ConfigureAwait(false);
+                if (_closed) return;
+                // A payload of a random length: a fixed one would be one more constant on the wire.
+                byte[] payload = new byte[Random.Shared.Next(4, 13)];
+                Random.Shared.NextBytes(payload);
+                await TryWriteControlAsync(OpPing, payload, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            // the connection is going away; the ping loop has nothing left to keep alive
+        }
     }
 
     public async Task CloseAsync()

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 using TgwsOne.Core;
 
 namespace TgwsOne.Engine;
@@ -35,6 +36,16 @@ public sealed record EngineConfig
     public bool ForceTestDc { get; init; }
     public bool Verbose { get; init; }
 
+    /// <summary>How often a pooled WebSocket gets a keep-alive ping; 0 turns the pings off.</summary>
+    public int PingIntervalSeconds { get; init; }
+
+    /// <summary>Random extra delay added to every ping, so the rhythm is not one constant on the wire.</summary>
+    public int PingJitterSeconds { get; init; } = DefaultPingJitterSeconds;
+
+    /// <summary>Masked mode keeps its connections warm: an idle socket that says nothing for minutes is a pattern too.</summary>
+    public const int DefaultPingIntervalSeconds = 25;
+    public const int DefaultPingJitterSeconds = 10;
+
     public string? LogFile { get; init; }
     public double LogMaxMb { get; init; } = 5;
     public int LogBackups { get; init; } = 1;
@@ -66,6 +77,9 @@ public sealed record EngineConfig
             CfproxyWorkerDomains = s.WorkerDomains,
             CfproxyH2Media = s.H2,
             DisableSecure = s.NoSecure,
+            FakeTlsDomain = s.FakeTlsDomain,
+            // Masked mode already hides the handshake; an idle pooled socket must not give it away by staying silent.
+            PingIntervalSeconds = s.FakeTlsDomain.Length > 0 ? DefaultPingIntervalSeconds : 0,
             Verbose = s.Verbose,
             LogFile = logFile,
             LogMaxMb = s.LogMaxMb,
@@ -76,11 +90,18 @@ public sealed record EngineConfig
 
     public static bool IsValidSecret(string? s) => s is { Length: 32 } && s.All(Uri.IsHexDigit);
 
-    /// <summary>The <c>tg://proxy</c> link a client adds; wildcard listen addresses become loopback (or the LAN address).</summary>
+    /// <summary>
+    /// The <c>tg://proxy</c> link a client adds; wildcard listen addresses become loopback (or the LAN address).
+    /// With a masking domain the link carries an <c>ee</c>-secret followed by that domain in hex: such a client speaks
+    /// the fake-TLS handshake and looks like a visit to that site, instead of the bare <c>dd</c> obfuscated2 one.
+    /// </summary>
     public string TelegramLink()
     {
         string linkHost = GetLinkHost(Host);
-        return $"tg://proxy?server={Uri.EscapeDataString(linkHost)}&port={Port}&secret=dd{Secret}";
+        string secret = FakeTlsDomain.Length > 0
+            ? "ee" + Secret + Convert.ToHexStringLower(Encoding.ASCII.GetBytes(FakeTlsDomain))
+            : "dd" + Secret;
+        return $"tg://proxy?server={Uri.EscapeDataString(linkHost)}&port={Port}&secret={secret}";
     }
 
     // Python's get_link_host: 0.0.0.0 is replaced by the address the machine would use to reach the internet.
@@ -127,6 +148,8 @@ public static class EngineConfigParser
           --no-cfproxy                выключить запасной путь через Cloudflare
           --no-secure                 порт 80 для Cloudflare-соединений
           --fake-tls-domain DOMAIN    замаскировать прокси под TLS с этим доменом
+          --ping-interval N           пинг простаивающего пула WS, секунды (0 — выключено)
+          --ping-jitter N             случайная добавка к интервалу пинга, секунды (по умолчанию 10)
           --force-test-dc             весь трафик — в тестовые дата-центры Telegram
           --proxy-protocol            принимать заголовок PROXY protocol v1
           -h, --help                  эта справка
@@ -152,6 +175,8 @@ public static class EngineConfigParser
         var workerDomains = new List<string>();
         bool noH2 = false, noCfproxy = false, noSecure = false, forceTestDc = false, proxyProtocol = false;
         string fakeTlsDomain = "";
+        int pingInterval = 0;
+        int pingJitter = EngineConfig.DefaultPingJitterSeconds;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -260,6 +285,22 @@ public static class EngineConfigParser
                     fakeTlsDomain = v.Trim();
                     break;
                 }
+                case "--ping-interval":
+                {
+                    string? v = Next();
+                    if (v is null || !int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out pingInterval))
+                        return "после --ping-interval нужно число";
+                    if (pingInterval < 0) return "--ping-interval не может быть отрицательным";
+                    break;
+                }
+                case "--ping-jitter":
+                {
+                    string? v = Next();
+                    if (v is null || !int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out pingJitter))
+                        return "после --ping-jitter нужно число";
+                    if (pingJitter < 0) return "--ping-jitter не может быть отрицательным";
+                    break;
+                }
                 case "--force-test-dc":
                     forceTestDc = true;
                     break;
@@ -317,6 +358,8 @@ public static class EngineConfigParser
             LogBackups = logBackups,
             BufferSize = Math.Max(4, bufKb) * 1024,
             PoolSize = Math.Max(0, poolSize),
+            PingIntervalSeconds = pingInterval,
+            PingJitterSeconds = pingJitter,
             CfproxyUserDomains = CoerceDomains(cfDomains),
             CfproxyWorkerDomains = CoerceDomains(workerDomains),
             CfproxyH2Media = !noH2,
