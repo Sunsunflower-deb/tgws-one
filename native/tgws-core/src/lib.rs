@@ -17,6 +17,7 @@ pub mod ffi;
 pub mod mtproto;
 pub mod net;
 pub mod proto;
+pub mod relay;
 pub mod settings;
 pub mod strategy;
 pub mod tcp;
