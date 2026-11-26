@@ -43,6 +43,8 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
     {
         _paths.SeedTargetLists(_appListsDir);
         _paths.EnsureExclusionFiles();
+        // Generated even when the bypass is off: the app's dry run of a custom strategy points at this file too.
+        EnsureCfProxyHosts();
         // nfqws2 creates its --writable folder, but not the folder above it, and (running as an unprivileged user once
         // started) must be able to get into that one to let the Lua script write its state file.
         PublicDirectory.Ensure(_paths.StateDir);
@@ -202,10 +204,25 @@ public sealed class ZapretService : IControlHandler, IAsyncDisposable
 
     private string MissingBundle() => $"пакет zapret2 не найден: {_bundle.Exe}";
 
+    // The generated hostlist of the proxy's own Cloudflare connections. A failure is not fatal: the previous file
+    // stays in place and the run goes ahead with it.
+    private void EnsureCfProxyHosts()
+    {
+        try { _paths.EnsureCfProxyHosts(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Write($"служба: список узлов Cloudflare не обновлён: {ex.Message}");
+        }
+    }
+
     // A strategy ID becomes a command line. A custom one that is gone is "unknown"; one that exists but is
     // refused (not root's, forbidden option) says why, so the administrator can fix the file.
     private (IReadOnlyList<string>? Argv, string? Error) BuildArgv(string id)
     {
+        // The narrow scope protects the proxy's Cloudflare fallback by hostlist, so it is regenerated before every run:
+        // a list that drifted from the shipped domains would silently leave that fallback uncovered.
+        EnsureCfProxyHosts();
+
         DesyncPart? custom = null;
         if (id.StartsWith(CustomPrefix, StringComparison.Ordinal))
         {

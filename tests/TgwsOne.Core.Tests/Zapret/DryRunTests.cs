@@ -61,9 +61,13 @@ public class DryRunTests
 
         string lists = tmp.Combine("lists");
         Directory.CreateDirectory(lists);
-        string[] files = ["cloudflare-ips.txt", "telegram.txt", "exclude-hosts.txt", "exclude-ips.txt"];
+        string[] files = ["cloudflare-ips.txt", "telegram.txt", "exclude-hosts.txt", "exclude-ips.txt", "cfproxy-hosts.txt"];
         foreach (string f in files) File.WriteAllText(Path.Combine(lists, f), "# test\n");
-        var zl = new ZapretLists(Path.Combine(lists, files[0]), Path.Combine(lists, files[1]), Path.Combine(lists, files[2]), Path.Combine(lists, files[3]));
+        // The narrow scope is the default of Build: it adds a profile for the proxy's own Cloudflare hosts, and nfqws2
+        // has to accept a hostlist it can match.
+        File.WriteAllText(Path.Combine(lists, files[4]), "# test\nkws2.pclead.co.uk\n");
+        var zl = new ZapretLists(Path.Combine(lists, files[0]), Path.Combine(lists, files[1]), Path.Combine(lists, files[2]),
+                                 Path.Combine(lists, files[3]), Path.Combine(lists, files[4]));
 
         // nfqws2 creates the --writable directory itself, but not its parent: the service makes the state dir.
         string stateDir = tmp.Combine("state");

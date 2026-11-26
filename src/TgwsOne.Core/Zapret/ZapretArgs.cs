@@ -1,7 +1,12 @@
 ﻿namespace TgwsOne.Core.Zapret;
 
-/// <summary>The four list files a run reads (full paths): the targets are admin-owned, the exclusions service-written.</summary>
-public sealed record ZapretLists(string CloudflareIps, string TelegramHosts, string ExcludeHosts, string ExcludeIps);
+/// <summary>
+/// The list files a run reads (full paths): the targets are admin-owned, the exclusions service-written.
+/// <see cref="CfProxyHosts"/> is the generated hostlist of the proxy's own Cloudflare connections; an empty path
+/// means "not generated yet", and the narrow scope then adds no profile for them.
+/// </summary>
+public sealed record ZapretLists(string CloudflareIps, string TelegramHosts, string ExcludeHosts, string ExcludeIps,
+                                 string CfProxyHosts = "");
 
 /// <summary>Builds the winws2/nfqws2 command line for a strategy.</summary>
 public static class ZapretArgs
@@ -90,8 +95,21 @@ public static class ZapretArgs
 
         argv.Add(os == OsKind.Windows ? "--wf-tcp-out=443" : $"--qnum={QueueNum}");
 
+        // The narrow scope must still cover the proxy's own Cloudflare connections: the direct route to the data
+        // centres is what a provider blocks first, and the fallback dials kws<dc>.<cf domain> — names that are not in
+        // telegram.txt at all. Without this profile the proxy is left with no protected route out, which is what the
+        // wide scope used to hide.
+        if (scope == ZapretScope.Telegram && lists.CfProxyHosts.Length > 0)
+        {
+            argv.AddRange(["--filter-tcp=443", "--filter-l7=tls",
+                $"--hostlist={lists.CfProxyHosts}",
+                $"--hostlist-exclude={lists.ExcludeHosts}"]);
+            argv.AddRange(body);
+            argv.Add("--new");
+        }
+
         // The wide scope (opt-in) starts with every Cloudflare address: other applications — browsers first of all —
-        // are affected by it too. The narrow default (Telegram only) skips that profile entirely.
+        // are affected by it too.
         if (scope == ZapretScope.All)
         {
             argv.AddRange(["--filter-tcp=443", "--filter-l7=tls",

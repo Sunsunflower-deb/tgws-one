@@ -59,9 +59,11 @@ public sealed class ServicePaths
         }
 
         AutoStateFile = Join(StateDir, ZapretArgs.WritableFolder, AutoState.FileName);
+        CfProxyDomainsFile = Join(ListsDir, CfProxyHosts.DomainsFile);
         Lists = new ZapretLists(
             Join(ListsDir, CloudflareFile), Join(ListsDir, TelegramFile),
-            Join(ExclusionsDir, "exclude-hosts.txt"), Join(ExclusionsDir, "exclude-ips.txt"));
+            Join(ExclusionsDir, "exclude-hosts.txt"), Join(ExclusionsDir, "exclude-ips.txt"),
+            Join(ListsDir, CfProxyHosts.HostsFile));
     }
 
     public static ServicePaths For(OsKind os, Func<string, string?> env) => new(os, env);
@@ -73,6 +75,8 @@ public sealed class ServicePaths
     public string StateIni { get; }
     /// <summary>Target lists (Telegram hosts, Cloudflare ranges): admin-owned.</summary>
     public string ListsDir { get; }
+    /// <summary>The admin-owned base domains the generated CF-proxy hostlist is built from.</summary>
+    public string CfProxyDomainsFile { get; }
     /// <summary>Exclusion lists: written by the service on behalf of any user.</summary>
     public string ExclusionsDir { get; }
     /// <summary>Hand-written <c>&lt;name&gt;.args</c> strategies: admin-owned.</summary>
@@ -88,11 +92,11 @@ public sealed class ServicePaths
     public string? WindowsRoot { get; }
     public ZapretLists Lists { get; }
 
-    /// <summary>Copies the two target lists from <paramref name="appListsDir"/> where they are missing; never overwrites.</summary>
+    /// <summary>Copies the target lists from <paramref name="appListsDir"/> where they are missing; never overwrites.</summary>
     public void SeedTargetLists(string appListsDir)
     {
         PublicDirectory.Ensure(ListsDir);   // nfqws2 reads the lists after dropping root privileges
-        foreach (string name in new[] { TelegramFile, CloudflareFile })
+        foreach (string name in new[] { TelegramFile, CloudflareFile, CfProxyHosts.DomainsFile })
         {
             string target = Path.Combine(ListsDir, name);
             string source = Path.Combine(appListsDir, name);
@@ -110,6 +114,13 @@ public sealed class ServicePaths
         foreach (string file in new[] { Lists.ExcludeHosts, Lists.ExcludeIps })
             if (!File.Exists(file)) Exclusions.Write(file, [], ExclusionsHeader);
     }
+
+    /// <summary>
+    /// Regenerates <see cref="ZapretLists.CfProxyHosts"/> from <see cref="CfProxyDomainsFile"/> and returns how many
+    /// hosts it holds. Rewritten on every run: the list decides what the narrow scope protects, and a stale one would
+    /// quietly stop covering the proxy's fallback.
+    /// </summary>
+    public int EnsureCfProxyHosts() => CfProxyHosts.Write(CfProxyDomainsFile, Lists.CfProxyHosts);
 
     private static string RootHash(string root)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root)))[..8].ToLowerInvariant();

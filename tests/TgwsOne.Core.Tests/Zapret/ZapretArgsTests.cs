@@ -1,4 +1,4 @@
-﻿using TgwsOne.Core.Zapret;
+using TgwsOne.Core.Zapret;
 
 namespace TgwsOne.Core.Tests.Zapret;
 
@@ -6,11 +6,13 @@ public class ZapretArgsTests
 {
     private static readonly ZapretLists LinuxLists = new(
         "/etc/tgwsone/lists/cloudflare-ips.txt", "/etc/tgwsone/lists/telegram.txt",
-        "/var/lib/tgwsone/exclude-hosts.txt", "/var/lib/tgwsone/exclude-ips.txt");
+        "/var/lib/tgwsone/exclude-hosts.txt", "/var/lib/tgwsone/exclude-ips.txt",
+        "/etc/tgwsone/lists/cfproxy-hosts.txt");
 
     private static readonly ZapretLists WindowsLists = new(
         @"C:\ProgramData\TgwsOne\lists\cloudflare-ips.txt", @"C:\ProgramData\TgwsOne\lists\telegram.txt",
-        @"C:\ProgramData\TgwsOne\lists\exclude-hosts.txt", @"C:\ProgramData\TgwsOne\lists\exclude-ips.txt");
+        @"C:\ProgramData\TgwsOne\lists\exclude-hosts.txt", @"C:\ProgramData\TgwsOne\lists\exclude-ips.txt",
+        @"C:\ProgramData\TgwsOne\lists\cfproxy-hosts.txt");
 
     private static ZapretBundle LinuxBundle() => ZapretBundle.Locate(OsKind.Linux, "/opt/tgwsone", _ => null);
     private static ZapretBundle WindowsBundle() => ZapretBundle.Locate(OsKind.Windows, @"C:\Program Files\TgwsOne", _ => null);
@@ -136,14 +138,29 @@ public class ZapretArgsTests
     }
 
     [Fact]
-    public void Build_DefaultScope_IsTelegramOnly_NoCloudflareProfile()
+    public void Build_NarrowScope_ProtectsTheProxyCloudflareHosts_AndOnlyThem()
     {
-        // The default is the narrow scope: only Telegram hosts, no --ipset (Cloudflare) profile and therefore no --new.
+        // The narrow scope leaves other applications alone: no --ipset over all Cloudflare ranges. It must however
+        // cover the proxy's own fallback (kws<dc>.<cf domain>), which is not a Telegram host name at all.
         string[] argv = Linux("split", scope: ZapretScope.Telegram);
 
+        Assert.Contains("--hostlist=/etc/tgwsone/lists/cfproxy-hosts.txt", argv);
         Assert.Contains("--hostlist=/etc/tgwsone/lists/telegram.txt", argv);
         Assert.DoesNotContain(argv, a => a.StartsWith("--ipset=", StringComparison.Ordinal));
+        Assert.DoesNotContain(argv, a => a.StartsWith("--ipset-exclude=", StringComparison.Ordinal));
+        Assert.Single(argv, "--new");
+    }
+
+    [Fact]
+    public void Build_NarrowScope_WithoutTheHostlist_SkipsThatProfile()
+    {
+        // Nothing generated yet (no list path): the run must still be a valid single-profile command line.
+        var lists = new ZapretLists("/l/cloudflare-ips.txt", "/l/telegram.txt", "/l/exclude-hosts.txt", "/l/exclude-ips.txt");
+        string[] argv = [.. ZapretArgs.Build(OsKind.Linux, LinuxBundle(), lists, "split", "/var/lib/tgwsone",
+            scope: ZapretScope.Telegram)];
+
         Assert.DoesNotContain("--new", argv);
+        Assert.Contains("--hostlist=/l/telegram.txt", argv);
     }
 
     [Fact]

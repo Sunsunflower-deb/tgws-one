@@ -22,7 +22,8 @@ public class ServicePathsTests
         Assert.Null(p.WindowsRoot);
         Assert.Equal(new ZapretLists(
             "/etc/tgwsone/lists/cloudflare-ips.txt", "/etc/tgwsone/lists/telegram.txt",
-            "/var/lib/tgwsone/exclude-hosts.txt", "/var/lib/tgwsone/exclude-ips.txt"), p.Lists);
+            "/var/lib/tgwsone/exclude-hosts.txt", "/var/lib/tgwsone/exclude-ips.txt",
+            "/etc/tgwsone/lists/cfproxy-hosts.txt"), p.Lists);
     }
 
     [Fact]
@@ -40,7 +41,8 @@ public class ServicePathsTests
         Assert.Equal("TgwsOne.Zapret", p.Endpoint);
         Assert.Equal(new ZapretLists(
             @"C:\ProgramData\TgwsOne\lists\cloudflare-ips.txt", @"C:\ProgramData\TgwsOne\lists\telegram.txt",
-            @"C:\ProgramData\TgwsOne\lists\exclude-hosts.txt", @"C:\ProgramData\TgwsOne\lists\exclude-ips.txt"), p.Lists);
+            @"C:\ProgramData\TgwsOne\lists\exclude-hosts.txt", @"C:\ProgramData\TgwsOne\lists\exclude-ips.txt",
+            @"C:\ProgramData\TgwsOne\lists\cfproxy-hosts.txt"), p.Lists);
     }
 
     [Fact]
@@ -148,5 +150,36 @@ public class ServicePathsTests
         Assert.Equal(ServicePaths.ExclusionsHeader + "\n", File.ReadAllText(p.Lists.ExcludeHosts));
         Assert.Empty(Exclusions.Read(p.Lists.ExcludeHosts));
         Assert.Equal("203.0.113.0/24\n", File.ReadAllText(p.Lists.ExcludeIps));
+    }
+
+    [Fact]
+    public void EnsureCfProxyHosts_GeneratesTheHostlistUnderTheServiceRoot()
+    {
+        using var tmp = new TempDir();
+        ServicePaths p = ServicePaths.For(OsKind.Linux, Env(("TGWS_SERVICE_ROOT", tmp.Combine("root"))));
+        Directory.CreateDirectory(p.ListsDir);
+        File.WriteAllText(p.CfProxyDomainsFile, "# domains\npclead.co.uk\noffshor.co.uk\n");
+
+        int count = p.EnsureCfProxyHosts();
+
+        Assert.Equal(12, count);   // two domains, each plus kws1…kws5
+        IReadOnlyList<string> hosts = Exclusions.Read(p.Lists.CfProxyHosts);
+        Assert.Contains("pclead.co.uk", hosts);
+        Assert.Contains("kws2.pclead.co.uk", hosts);
+        Assert.Contains("kws5.offshor.co.uk", hosts);
+        Assert.Equal(hosts.Count, hosts.Distinct().Count());
+    }
+
+    [Fact]
+    public void EnsureCfProxyHosts_WithoutADomainList_WritesAnEmptyHostlist()
+    {
+        using var tmp = new TempDir();
+        ServicePaths p = ServicePaths.For(OsKind.Linux, Env(("TGWS_SERVICE_ROOT", tmp.Combine("root"))));
+
+        Assert.Equal(0, p.EnsureCfProxyHosts());
+
+        // The path exists, the file is a header and nothing else: the narrow scope then adds no profile for it.
+        Assert.True(File.Exists(p.Lists.CfProxyHosts));
+        Assert.Empty(Exclusions.Read(p.Lists.CfProxyHosts));
     }
 }
