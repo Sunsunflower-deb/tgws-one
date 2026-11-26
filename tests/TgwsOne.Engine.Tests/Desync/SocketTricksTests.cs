@@ -125,6 +125,54 @@ public sealed class SocketTricksTests
     }
 
     [Fact]
+    public void Ttl_ChangesBothOptions_OnDualModeSocketToIpv4Loopback()
+    {
+        if (!IsLinux) return;
+        if (!Socket.OSSupportsIPv6) return;
+
+        using var listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        listener.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        listener.Listen(1);
+
+        // EgressSocket creates the same kind of socket: the parameterless constructor picks a dual-mode IPv6 socket,
+        // so a connection to the IPv4 loopback literal goes through a v4-mapped address on the wire.
+        using var client = new Socket(SocketType.Stream, ProtocolType.Tcp);
+        try
+        {
+            client.Connect(new IPEndPoint(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndPoint!).Port));
+        }
+        catch (SocketException)
+        {
+            return; // an environment without a v4-mapped loopback has nothing to check here
+        }
+
+        using var server = listener.Accept();
+
+        Assert.Equal(AddressFamily.InterNetworkV6, client.AddressFamily);
+        Assert.True(client.DualMode);
+
+        var tricks = new LinuxSocketTricks();
+        int systemTtl = tricks.GetSystemTtl(client);
+        Assert.InRange(systemTtl, 1, 255);
+        Assert.InRange(tricks.GetTtlOption(client, ipv4: true), 1, 255);
+        Assert.Equal(systemTtl, tricks.GetTtlOption(client, ipv4: false));
+
+        tricks.SetTtl(client, 5);
+        Assert.Equal(0, tricks.LastError);
+
+        // The E2.6 regression: before the fix only IPV6_UNICAST_HOPS changed, so the IPv4 packet kept the system TTL.
+        // The dual-mode socket must now carry the low value in both options; the IPv4 one is the one the v4-mapped
+        // packet actually uses.
+        Assert.Equal(5, tricks.GetTtlOption(client, ipv4: true));
+        Assert.Equal(5, tricks.GetTtlOption(client, ipv4: false));
+        Assert.Equal(5, client.Ttl);
+
+        tricks.SetTtl(client, systemTtl);
+        Assert.Equal(systemTtl, tricks.GetTtlOption(client, ipv4: true));
+        Assert.Equal(systemTtl, tricks.GetTtlOption(client, ipv4: false));
+    }
+
+    [Fact]
     public void TrySendSpliced_DeliversAllBytes()
     {
         if (!IsLinux) return;

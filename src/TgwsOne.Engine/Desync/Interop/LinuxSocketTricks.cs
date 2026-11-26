@@ -48,10 +48,43 @@ internal sealed class LinuxSocketTricks : ISocketTricks
 
     public int GetSystemTtl(Socket socket)
     {
+        // A dual-mode IPv6 socket (what EgressSocket creates) reads its IPv6 hop limit here; the IPv4 TTL is written
+        // as well by SetTtl and can be inspected with GetTtlOption.
+        return GetTtlOption(socket, ipv4: socket.AddressFamily != AddressFamily.InterNetworkV6);
+    }
+
+    public void SetTtl(Socket socket, int ttl)
+    {
+        if (!TryAcquire(socket, out bool added, out int fd)) return;
+        try
+        {
+            // On a dual-mode IPv6 socket Linux chooses the outbound TTL by the packet family: IPV6_UNICAST_HOPS for
+            // an IPv6 peer and IP_TTL for a v4-mapped IPv4 peer. Setting both covers either connection, and the
+            // option that does not apply is accepted and ignored (Linux allows IP_TTL on an AF_INET6 socket), so a
+            // v4-mapped connection no longer keeps the system TTL while the plan thinks it is one.
+            LastError = 0;
+            foreach ((int level, int name) in TtlOptions(socket))
+            {
+                if (SetSockOptInt(fd, level, name, ref ttl, sizeof(int)) != 0)
+                    LastError = Marshal.GetLastWin32Error();
+            }
+        }
+        finally
+        {
+            if (added) socket.SafeHandle.DangerousRelease();
+        }
+    }
+
+    /// <summary>
+    /// Reads one TTL option directly. Used by tests to check both options of a dual-mode socket: the data path only
+    /// needs the option that matches the socket family (see <see cref="GetSystemTtl"/>).
+    /// </summary>
+    internal int GetTtlOption(Socket socket, bool ipv4)
+    {
         if (!TryAcquire(socket, out bool added, out int fd)) return -1;
         try
         {
-            (int level, int name) = TtlOption(socket);
+            (int level, int name) = ipv4 ? (IpProtoIp, IpTTL) : (IpProtoIpv6, Ipv6UnicastHops);
             uint length = sizeof(int);
             if (GetSockOptInt(fd, level, name, out int value, ref length) != 0)
             {
@@ -61,20 +94,6 @@ internal sealed class LinuxSocketTricks : ISocketTricks
 
             LastError = 0;
             return value;
-        }
-        finally
-        {
-            if (added) socket.SafeHandle.DangerousRelease();
-        }
-    }
-
-    public void SetTtl(Socket socket, int ttl)
-    {
-        if (!TryAcquire(socket, out bool added, out int fd)) return;
-        try
-        {
-            (int level, int name) = TtlOption(socket);
-            LastError = SetSockOptInt(fd, level, name, ref ttl, sizeof(int)) == 0 ? 0 : Marshal.GetLastWin32Error();
         }
         finally
         {
@@ -197,10 +216,14 @@ internal sealed class LinuxSocketTricks : ISocketTricks
         }
     }
 
-    private static (int Level, int Name) TtlOption(Socket socket)
-        => socket.AddressFamily == AddressFamily.InterNetworkV6
-            ? (IpProtoIpv6, Ipv6UnicastHops)
-            : (IpProtoIp, IpTTL);
+    // The default socket from EgressSocket is dual-mode IPv6, so a v4-mapped connection needs IP_TTL even though the
+    // socket family is InterNetworkV6. Both options are written for that family; an IPv4 socket has only IP_TTL.
+    private static readonly (int Level, int Name)[] V4TtlOptions = [(IpProtoIp, IpTTL)];
+    private static readonly (int Level, int Name)[] V6TtlOptions =
+        [(IpProtoIpv6, Ipv6UnicastHops), (IpProtoIp, IpTTL)];
+
+    private static (int Level, int Name)[] TtlOptions(Socket socket)
+        => socket.AddressFamily == AddressFamily.InterNetworkV6 ? V6TtlOptions : V4TtlOptions;
 
     private bool TryAcquire(Socket socket, out bool added, out int fd)
     {
