@@ -14,6 +14,7 @@
 
 pub mod ffi;
 pub mod net;
+pub mod settings;
 pub mod strategy;
 pub mod tcp;
 pub mod tls;
