@@ -11,12 +11,31 @@ public sealed record AutoHost(string Host, string Strategy, int Failures);
 /// </summary>
 public sealed class DesyncController : IDesyncController
 {
+    /// <summary>The <c>fails=</c> of the desktop <c>circular:fails=3:time=60</c> recipe.</summary>
+    public const int DefaultMaxFailures = 3;
+
+    /// <summary>The <c>time=</c> of the desktop <c>circular:fails=3:time=60</c> recipe.</summary>
+    public static readonly TimeSpan DefaultFailureWindow = TimeSpan.FromSeconds(60);
+
     private readonly object _gate = new();
     private readonly Dictionary<string, HostState> _hosts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly TimeProvider _timeProvider;
+    private readonly int _maxFailures;
+    private readonly TimeSpan _failureWindow;
     private IReadOnlyList<DesyncStrategy> _rotation;
 
-    public DesyncController(IReadOnlyList<DesyncStrategy>? rotation = null)
+    /// <param name="rotation">The set <c>auto</c> walks; the first entry is where every host starts.</param>
+    /// <param name="timeProvider">The clock the failure window is measured with; tests move a fake one.</param>
+    /// <param name="maxFailures">Failures within <paramref name="failureWindow"/> before moving to the next strategy.</param>
+    /// <param name="failureWindow">How far back a failure still counts.</param>
+    public DesyncController(IReadOnlyList<DesyncStrategy>? rotation = null, TimeProvider? timeProvider = null,
+                            int maxFailures = DefaultMaxFailures, TimeSpan? failureWindow = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxFailures, 1);
+        _failureWindow = failureWindow ?? DefaultFailureWindow;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_failureWindow, TimeSpan.Zero);
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _maxFailures = maxFailures;
         _rotation = Snapshot(rotation ?? []);
     }
 
@@ -104,13 +123,53 @@ public sealed class DesyncController : IDesyncController
 
     public void Report(string sni, string route, string? strategyId, bool ok, EgressFailure failure, TimeSpan elapsed)
     {
-        // The failure window and the rotation move live in E3.2; the selection itself is already useful without them.
-        _ = sni;
+        // Only auto rotates. An explicit selection is the user's answer and must not be silently overruled by failures.
         _ = route;
-        _ = strategyId;
-        _ = ok;
         _ = failure;
         _ = elapsed;
+
+        bool changed = false;
+        lock (_gate)
+        {
+            if (Selected is not null || _rotation.Count == 0) return;
+
+            string host = Normalize(sni);
+            if (!_hosts.TryGetValue(host, out HostState? state))
+            {
+                state = new HostState();
+                _hosts[host] = state;
+            }
+            if (state.StrategyIndex >= _rotation.Count) state.StrategyIndex = 0;
+
+            // A late report from the strategy the host has already moved away from says nothing about the new one.
+            string currentId = _rotation[state.StrategyIndex].Id;
+            if (strategyId is not null && !string.Equals(strategyId, currentId, StringComparison.Ordinal)) return;
+
+            if (ok)
+            {
+                if (state.Failures.Count > 0)
+                {
+                    state.Failures.Clear();
+                    changed = true;
+                }
+                return;
+            }
+
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            // Three failures inside the window rotate; a single old failure must not accumulate forever.
+            int expired = 0;
+            while (expired < state.Failures.Count && now - state.Failures[expired] > _failureWindow) expired++;
+            if (expired > 0) state.Failures.RemoveRange(0, expired);
+            state.Failures.Add(now);
+
+            if (state.Failures.Count >= _maxFailures)
+            {
+                state.Failures.Clear();
+                state.StrategyIndex = (state.StrategyIndex + 1) % _rotation.Count;
+                changed = true;
+            }
+        }
+        if (changed) Changed?.Invoke();
     }
 
     private static string Normalize(string? sni) => string.IsNullOrEmpty(sni) ? "" : sni;
