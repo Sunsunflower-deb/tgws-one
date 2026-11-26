@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TgwsOne.Engine.Desync;
 
 namespace TgwsOne.Engine.Transport;
 
@@ -18,6 +19,7 @@ public sealed class WebSocketPool : IAsyncDisposable
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
+    private readonly IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<PoolKey, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
@@ -35,11 +37,12 @@ public sealed class WebSocketPool : IAsyncDisposable
         public double RetryAfter;
     }
 
-    public WebSocketPool(EngineConfig config, EngineLog log, EngineStats stats)
+    public WebSocketPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress = null)
     {
         _config = config;
         _log = log;
         _stats = stats;
+        _egress = egress;
     }
 
     private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
@@ -263,7 +266,8 @@ public sealed class WebSocketPool : IAsyncDisposable
                     RawWebSocket ws = await RawWebSocket.ConnectAsync(
                         targetIp, domain, timeout, path,
                         sni: fronted ? frontSni : null,
-                        secure: true, bufferSize: _config.BufferSize, ct: _stop.Token).ConfigureAwait(false);
+                        secure: true, bufferSize: _config.BufferSize, ct: _stop.Token,
+                        route: fronted ? "ws-fronted" : "ws", egress: _egress).ConfigureAwait(false);
                     if (frontSni is not null) _tryFrontingFirst = fronted;
                     if (fronted) _stats.Fronting();
                     // A pooled socket sits idle between clients: pings with jitter keep it alive and unsuspicious.
@@ -343,6 +347,7 @@ public sealed class CfWorkerPool : IAsyncDisposable
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
+    private readonly IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<int, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
@@ -357,11 +362,12 @@ public sealed class CfWorkerPool : IAsyncDisposable
         public double RetryAfter;
     }
 
-    public CfWorkerPool(EngineConfig config, EngineLog log, EngineStats stats)
+    public CfWorkerPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress = null)
     {
         _config = config;
         _log = log;
         _stats = stats;
+        _egress = egress;
     }
 
     private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
@@ -536,7 +542,7 @@ public sealed class CfWorkerPool : IAsyncDisposable
                 RawWebSocket ws = await RawWebSocket.ConnectAsync(
                     workerDomain, workerDomain, TimeSpan.FromSeconds(8), path,
                     secure: !_config.DisableSecure, bufferSize: _config.BufferSize,
-                    ct: _stop.Token).ConfigureAwait(false);
+                    ct: _stop.Token, route: "cf-worker", egress: _egress).ConfigureAwait(false);
                 return (ws, workerDomain);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !_stop.IsCancellationRequested)

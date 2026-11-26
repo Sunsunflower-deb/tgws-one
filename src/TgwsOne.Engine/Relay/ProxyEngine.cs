@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using TgwsOne.Engine.Crypto;
+using TgwsOne.Engine.Desync;
 using TgwsOne.Engine.MtProto;
 using TgwsOne.Engine.Transport;
 
@@ -29,6 +30,7 @@ public sealed class ProxyEngine : IAsyncDisposable
     private readonly CfWorkerPool _cfWorkerPool;
     private readonly CfDomainRefresher _refresher;
     private readonly CfH2Pool? _h2Pool;
+    private readonly IEgress? _egress;
     private readonly byte[] _secret;
     private readonly CancellationTokenSource _stop = new();
     private readonly ConcurrentDictionary<long, Task> _clients = new();
@@ -42,15 +44,20 @@ public sealed class ProxyEngine : IAsyncDisposable
     private long _clientId;
     private bool _stopped;
 
-    public ProxyEngine(EngineConfig config, EngineLog? log = null)
+    /// <param name="desync">
+    /// The strategy controller, or null for the desktop path: with no controller no egress wrapper is built and the
+    /// transport code runs exactly as before. Masking and the domain refresher never see it by design.
+    /// </param>
+    public ProxyEngine(EngineConfig config, EngineLog? log = null, IDesyncController? desync = null)
     {
         _config = config;
         _log = log ?? new EngineLog(config.Verbose, config.LogFile, config.LogMaxMb, config.LogBackups);
         _secret = Convert.FromHexString(config.Secret);
-        _wsPool = new WebSocketPool(config, _log, _stats);
-        _cfWorkerPool = new CfWorkerPool(config, _log, _stats);
+        _egress = desync is null ? null : new DesyncEgress(desync, _log.Warn);
+        _wsPool = new WebSocketPool(config, _log, _stats, _egress);
+        _cfWorkerPool = new CfWorkerPool(config, _log, _stats, _egress);
         _refresher = new CfDomainRefresher(_balancer, _log, config.CfproxyUserDomains);
-        if (config.H2Enabled) _h2Pool = new CfH2Pool(config, _log, _stats, _balancer);
+        if (config.H2Enabled) _h2Pool = new CfH2Pool(config, _log, _stats, _balancer, _egress);
     }
 
     public bool IsRunning { get; private set; }
@@ -405,7 +412,8 @@ public sealed class ProxyEngine : IAsyncDisposable
                 try
                 {
                     ws = await RawWebSocket.ConnectAsync(domain, domain, TimeSpan.FromSeconds(10), path,
-                        secure: !_config.DisableSecure, bufferSize: _config.BufferSize, ct: ct).ConfigureAwait(false);
+                        secure: !_config.DisableSecure, bufferSize: _config.BufferSize, ct: ct,
+                        route: "cf-worker", egress: _egress).ConfigureAwait(false);
                     workerDomain = domain;
                     break;
                 }
@@ -441,7 +449,8 @@ public sealed class ProxyEngine : IAsyncDisposable
             try
             {
                 ws = await RawWebSocket.ConnectAsync(host, host, TimeSpan.FromSeconds(10),
-                    secure: !_config.DisableSecure, bufferSize: _config.BufferSize, ct: ct).ConfigureAwait(false);
+                    secure: !_config.DisableSecure, bufferSize: _config.BufferSize, ct: ct,
+                    route: "cf-proxy", egress: _egress).ConfigureAwait(false);
                 chosen = baseDomain;
                 break;
             }

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Threading.Channels;
 using TgwsOne.Engine.Crypto;
+using TgwsOne.Engine.Desync;
 using TgwsOne.Engine.MtProto;
 
 namespace TgwsOne.Engine.Transport;
@@ -30,6 +31,7 @@ public sealed class CfH2Pool : IAsyncDisposable
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
     private readonly DomainBalancer _balancer;
+    private readonly IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<string, CfH2Lane> _lanes = [];
     private readonly Dictionary<string, SemaphoreSlim> _locks = [];
@@ -39,12 +41,14 @@ public sealed class CfH2Pool : IAsyncDisposable
     private int _nextChannel;
     private bool _closed;
 
-    public CfH2Pool(EngineConfig config, EngineLog log, EngineStats stats, DomainBalancer balancer)
+    public CfH2Pool(EngineConfig config, EngineLog log, EngineStats stats, DomainBalancer balancer,
+                    IEgress? egress = null)
     {
         _config = config;
         _log = log;
         _stats = stats;
         _balancer = balancer;
+        _egress = egress;
     }
 
     private static double Now() => Environment.TickCount64 / 1000.0;
@@ -118,7 +122,7 @@ public sealed class CfH2Pool : IAsyncDisposable
                 if (lane is null)
                 {
                     int laneId = Interlocked.Increment(ref _nextLane);
-                    lane = new CfH2Lane(host, laneId, _config, _log, _stats);
+                    lane = new CfH2Lane(host, laneId, _config, _log, _stats, _egress);
                     try
                     {
                         await lane.PreflightAsync(ct).ConfigureAwait(false);
@@ -180,7 +184,8 @@ internal sealed class CfH2Lane : IAsyncDisposable
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
 
-    public CfH2Lane(string host, int laneId, EngineConfig config, EngineLog log, EngineStats stats)
+    public CfH2Lane(string host, int laneId, EngineConfig config, EngineLog log, EngineStats stats,
+                    IEgress? egress = null)
     {
         Host = host;
         LaneId = laneId;
@@ -196,6 +201,16 @@ internal sealed class CfH2Lane : IAsyncDisposable
             MaxResponseDrainSize = BufferBytes,
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(65),
         };
+        if (egress is not null)
+        {
+            // The HTTP/2 handler asks for a raw stream and does TLS itself, so this is the second TLS egress point.
+            handler.ConnectCallback = async (context, ct) =>
+            {
+                string host = context.DnsEndPoint.Host;
+                return await egress.ConnectAsync(host, context.DnsEndPoint.Port, "h2", host,
+                    TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
+            };
+        }
         if (config.DisableSecure)
             throw new InvalidOperationException("H2 requires TLS");
         _client = new HttpClient(handler)

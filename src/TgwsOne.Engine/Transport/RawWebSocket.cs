@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
+using TgwsOne.Engine.Desync;
 
 namespace TgwsOne.Engine.Transport;
 
@@ -71,31 +72,51 @@ public sealed class RawWebSocket : IAsyncDisposable
     /// <param name="sni">A different TLS server name (domain fronting), or null.</param>
     /// <param name="secure">HTTPS (443) or plain HTTP (80).</param>
     /// <param name="port">0 means the protocol's default (443 with TLS, 80 without); tests dial a local server.</param>
+    /// <param name="route">The engine route the connect belongs to, for strategy selection.</param>
+    /// <param name="egress">
+    /// When null the original socket path runs unchanged (the desktop invariant). When set, the stream for the TLS
+    /// layer comes from it, which is where the desync layer lives.
+    /// </param>
     public static async Task<RawWebSocket> ConnectAsync(
         string host, string domain, TimeSpan timeout, string path = "/apiws",
         string? sni = null, bool secure = true, int bufferSize = 256 * 1024, int port = 0,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string route = "ws", IEgress? egress = null)
     {
         string tlsName = sni ?? domain;
+        int remotePort = port != 0 ? port : secure ? 443 : 80;
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
 
-        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+        Socket? socket = null;
+        Stream? egressStream = null;
         try
         {
-            await socket.ConnectAsync(host, port != 0 ? port : secure ? 443 : 80, timeoutCts.Token).ConfigureAwait(false);
-            socket.NoDelay = true;
-            try
+            Stream stream;
+            if (egress is null)
             {
-                socket.ReceiveBufferSize = bufferSize;
-                socket.SendBufferSize = bufferSize;
+                socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                await socket.ConnectAsync(host, remotePort, timeoutCts.Token).ConfigureAwait(false);
+                socket.NoDelay = true;
+                try
+                {
+                    socket.ReceiveBufferSize = bufferSize;
+                    socket.SendBufferSize = bufferSize;
+                }
+                catch (SocketException)
+                {
+                    // the OS may cap or refuse the requested size; the default still works
+                }
+
+                stream = new NetworkStream(socket, ownsSocket: false);
             }
-            catch (SocketException)
+            else
             {
-                // the OS may cap or refuse the requested size; the default still works
+                // The egress stream owns its socket, so nothing above this line has to know how the route was made.
+                egressStream = await egress.ConnectAsync(host, remotePort, route, tlsName, timeout, timeoutCts.Token)
+                    .ConfigureAwait(false);
+                stream = egressStream;
             }
 
-            Stream stream = new NetworkStream(socket, ownsSocket: false);
             if (secure)
             {
                 var ssl = new SslStream(stream, leaveInnerStreamOpen: false, ValidateCertificate(sni is null));
@@ -157,13 +178,27 @@ public sealed class RawWebSocket : IAsyncDisposable
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            socket.Dispose();
+            socket?.Dispose();
+            DisposeEgressStream(egressStream);
             throw new TimeoutException($"WebSocket connect to {host} timed out");
         }
         catch
         {
-            socket.Dispose();
+            socket?.Dispose();
+            DisposeEgressStream(egressStream);
             throw;
+        }
+    }
+
+    private static void DisposeEgressStream(Stream? stream)
+    {
+        try
+        {
+            stream?.Dispose();
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or SocketException)
+        {
+            // The peer may already have reset the socket; the caller only needs the original failure.
         }
     }
 
