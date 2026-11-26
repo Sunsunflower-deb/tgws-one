@@ -32,6 +32,7 @@ public sealed class CfH2Pool : IAsyncDisposable, IIdleConnectionPool
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
     private readonly DomainBalancer _balancer;
+    private readonly TimeProvider _time;
     private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<string, CfH2Lane> _lanes = [];
@@ -40,20 +41,28 @@ public sealed class CfH2Pool : IAsyncDisposable, IIdleConnectionPool
     private readonly Dictionary<int, double> _setupRetryAfter = [];
     private int _nextLane;
     private int _nextChannel;
+    private double _lastClientAt;
     private bool _closed;
 
     public CfH2Pool(EngineConfig config, EngineLog log, EngineStats stats, DomainBalancer balancer,
-                    IEgress? egress = null)
+                    IEgress? egress = null, TimeProvider? timeProvider = null)
     {
         _config = config;
         _log = log;
         _stats = stats;
         _balancer = balancer;
         _egress = egress;
+        _time = timeProvider ?? TimeProvider.System;
+        _lastClientAt = Now();
     }
 
     /// <summary>Swaps the egress used by newly created lanes; live lanes keep the stream they were opened with.</summary>
     public void SetEgress(IEgress? egress) => _egress = egress;
+
+    private double Now() => _time.GetUtcNow().UtcDateTime.Ticks / (double)TimeSpan.TicksPerSecond;
+
+    private bool IdleExpiredLocked(double now)
+        => _config.PoolIdleSeconds > 0 && now - _lastClientAt >= _config.PoolIdleSeconds;
 
     /// <summary>Drops lanes with no live channel; a strategy switch must not interrupt a running media session.</summary>
     public void CloseIdle()
@@ -72,11 +81,58 @@ public sealed class CfH2Pool : IAsyncDisposable, IIdleConnectionPool
         if (idle.Count > 0) _log.Debug($"H2 pool closed {idle.Count} idle lane(s)");
     }
 
-    private static double Now() => Environment.TickCount64 / 1000.0;
+    /// <summary>Closes the free lanes and forgets the cooldowns after a long absence.</summary>
+    internal bool CloseIfIdle()
+    {
+        double now = Now();
+        lock (_gate)
+        {
+            if (!IdleExpiredLocked(now)) return false;
+            _failedUntil.Clear();
+            _setupRetryAfter.Clear();
+        }
+        CloseIdle();
+        _log.Debug($"H2 pool idle for {_config.PoolIdleSeconds}s; freed idle lane(s)");
+        return true;
+    }
+
+    private void WakeUp()
+    {
+        double now = Now();
+        bool sleeping;
+        lock (_gate)
+        {
+            sleeping = IdleExpiredLocked(now);
+            _lastClientAt = now;
+            if (sleeping)
+            {
+                _failedUntil.Clear();
+                _setupRetryAfter.Clear();
+            }
+        }
+        if (sleeping) CloseIdle();
+    }
+
+    /// <summary>A network change invalidates every lane, including the ones a live session is still using.</summary>
+    public void NetworkChanged()
+    {
+        List<CfH2Lane> lanes;
+        lock (_gate)
+        {
+            lanes = [.. _lanes.Values];
+            _lanes.Clear();
+            _failedUntil.Clear();
+            _setupRetryAfter.Clear();
+        }
+        foreach (CfH2Lane lane in lanes)
+            lane.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (lanes.Count > 0) _log.Debug($"H2 pool dropped {lanes.Count} lane(s) after a network change");
+    }
 
     public async Task<CfH2Channel?> OpenAsync(int dc, string label, CancellationToken ct)
     {
         if (_closed) throw new InvalidOperationException("H2 pool closed");
+        WakeUp();
         lock (_gate)
         {
             if (Now() < _setupRetryAfter.GetValueOrDefault(dc)) return null;

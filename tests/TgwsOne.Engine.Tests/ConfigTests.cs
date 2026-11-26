@@ -30,6 +30,7 @@ public class EngineConfigParserTests
         Assert.False(c.DisableSecure);
         Assert.Equal(256 * 1024, c.BufferSize);
         Assert.Equal(4, c.PoolSize);
+        Assert.Equal(0, c.PoolIdleSeconds);   // the desktop keeps its pools warm forever
         Assert.Null(c.LogFile);
         Assert.Equal(5, c.LogMaxMb);
         Assert.Equal(1, c.LogBackups);

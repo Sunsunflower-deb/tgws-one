@@ -13,6 +13,12 @@ namespace TgwsOne.Engine.Relay;
 internal interface IIdleConnectionPool
 {
     void CloseIdle();
+
+    /// <summary>
+    /// The network changed: free connections are useless and the next client must not wait out a backoff from
+    /// before the change. A stand-in that only knows <see cref="CloseIdle"/> is treated the same way.
+    /// </summary>
+    void NetworkChanged() => CloseIdle();
 }
 
 /// <summary>
@@ -42,7 +48,12 @@ public sealed class ProxyEngine : IAsyncDisposable
     private IDesyncController? _desync;
     private readonly byte[] _secret;
     private readonly CancellationTokenSource _stop = new();
+    private readonly object _networkGate = new();
+    private readonly List<CancellationTokenSource> _networkHistory = [];
+    private CancellationTokenSource _network;
     private readonly ConcurrentDictionary<long, Task> _clients = new();
+    private readonly ConcurrentDictionary<long, Action> _outbound = new();
+    private long _outboundId;
     private readonly object _tcpGate = new();
     private readonly Dictionary<(string, int), int> _tcpFailures = [];
     private readonly Dictionary<(string, int), double> _tcpRetryAfter = [];
@@ -69,6 +80,7 @@ public sealed class ProxyEngine : IAsyncDisposable
         _config = config;
         _log = log ?? new EngineLog(config.Verbose, config.LogFile, config.LogMaxMb, config.LogBackups);
         _secret = Convert.FromHexString(config.Secret);
+        _network = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
         _desync = desync;
         AttachDesync(desync);
         _egress = desync is null ? null : new DesyncEgress(desync, _log.Warn, stats: _stats);
@@ -132,11 +144,74 @@ public sealed class ProxyEngine : IAsyncDisposable
         foreach (IIdleConnectionPool pool in _idlePools) pool.CloseIdle();
     }
 
+    /// <summary>
+    /// The device moved to another network (Wi-Fi ↔ cellular): every pooled and live outbound socket is stale, and
+    /// a client that was relaying sees its session end the same way as a disconnect. The engine itself keeps
+    /// listening, so a reconnecting client warms the pools again from scratch.
+    /// </summary>
+    public void OnNetworkChanged()
+    {
+        if (_stopped) return;
+        CancellationTokenSource previous;
+        lock (_networkGate)
+        {
+            previous = _network;
+            _network = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+            _networkHistory.Add(previous);
+        }
+
+        // Sessions admitted on the old network stop first; then their sockets are aborted, so neither side is kept
+        // waiting on a path the device no longer has.
+        previous.Cancel();
+
+        foreach (IIdleConnectionPool pool in _idlePools) pool.NetworkChanged();
+        CloseOutboundConnections();
+        lock (_tcpGate)
+        {
+            _tcpFailures.Clear();
+            _tcpRetryAfter.Clear();
+        }
+        _log.Info("network changed; pooled and live outbound connections dropped");
+    }
+
+    private long TrackOutbound(Action abort)
+    {
+        long id = Interlocked.Increment(ref _outboundId);
+        _outbound[id] = abort;
+        return id;
+    }
+
+    private void UntrackOutbound(long id) => _outbound.TryRemove(id, out _);
+
+    private void CloseOutboundConnections()
+    {
+        foreach ((long id, Action abort) in _outbound)
+        {
+            if (!_outbound.TryRemove(id, out Action? registered)) continue;
+            try { registered(); }
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException
+                                           or InvalidOperationException)
+            {
+                // A session may have closed the same socket a moment earlier; the network change has nothing to add.
+            }
+        }
+    }
+
+    private static Action AbortOf(RawWebSocket socket) => socket.Abort;
+
+    private static Action DisposeOf(TcpClient client) => client.Dispose;
+
     public bool IsRunning { get; private set; }
     public int Port { get; private set; }
     public EngineStats Stats => _stats;
     public EngineLog Log => _log;
     public EngineConfig Config => _config;
+
+    /// <summary>Test seam: how many destinations currently wait out a TCP-fallback backoff.</summary>
+    internal int TcpFallbackBackoffCount
+    {
+        get { lock (_tcpGate) return _tcpRetryAfter.Count; }
+    }
 
     private static double Now => Environment.TickCount64 / 1000.0;
 
@@ -225,7 +300,9 @@ public sealed class ProxyEngine : IAsyncDisposable
             }
 
             long id = Interlocked.Increment(ref _clientId);
-            Task task = Task.Run(() => HandleClientAsync(client, id, ct));
+            CancellationToken networkCt;
+            lock (_networkGate) networkCt = _network.Token;
+            Task task = Task.Run(() => HandleClientAsync(client, id, networkCt));
             _clients[id] = task;
             _ = task.ContinueWith(t => _clients.TryRemove(id, out _), TaskScheduler.Default);
         }
@@ -335,17 +412,25 @@ public sealed class ProxyEngine : IAsyncDisposable
                 _log.Info($"[{label}] DC{dc}{mediaTag} -> WS pool hit");
                 _stats.WsConnection();
                 MsgSplitter? splitter = TrySplitter(protoTag, label);
+                long lease = TrackOutbound(AbortOf(ws));
                 try
                 {
-                    await ws.SendAsync(relayInit, ct).ConfigureAwait(false);
+                    try
+                    {
+                        await ws.SendAsync(relayInit, ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        ws.Abort();
+                        throw;
+                    }
+                    await RelayBridge.WebSocketAsync(stream, ws, ctx, splitter, label, dcTag, _stats, _log, ct)
+                        .ConfigureAwait(false);
                 }
-                catch
+                finally
                 {
-                    ws.Abort();
-                    throw;
+                    UntrackOutbound(lease);
                 }
-                await RelayBridge.WebSocketAsync(stream, ws, ctx, splitter, label, dcTag, _stats, _log, ct)
-                    .ConfigureAwait(false);
                 return;
             }
 
@@ -429,12 +514,14 @@ public sealed class ProxyEngine : IAsyncDisposable
                 {
                     _stats.H2Connection();
                     _stats.CfProxy();
+                    long lease = TrackOutbound(channel.Close);
                     try
                     {
                         await CfH2Channel.BridgeAsync(client, channel, ctx, protoTag, _log, ct).ConfigureAwait(false);
                     }
                     finally
                     {
+                        UntrackOutbound(lease);
                         await channel.DisposeAsync().ConfigureAwait(false);
                     }
                     return true;
@@ -498,10 +585,18 @@ public sealed class ProxyEngine : IAsyncDisposable
 
         if (ws is null) return false;
         _stats.CfProxy();
-        try { await ws.SendAsync(relayInit, ct).ConfigureAwait(false); }
-        catch { ws.Abort(); throw; }
-        await RelayBridge.WebSocketAsync(client, ws, ctx, null, label, $"DC{dc}{(isMedia ? "m" : "")}",
-            _stats, _log, ct).ConfigureAwait(false);
+        long lease = TrackOutbound(AbortOf(ws));
+        try
+        {
+            try { await ws.SendAsync(relayInit, ct).ConfigureAwait(false); }
+            catch { ws.Abort(); throw; }
+            await RelayBridge.WebSocketAsync(client, ws, ctx, null, label, $"DC{dc}{(isMedia ? "m" : "")}",
+                _stats, _log, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            UntrackOutbound(lease);
+        }
         return true;
     }
 
@@ -538,10 +633,18 @@ public sealed class ProxyEngine : IAsyncDisposable
             _log.Info($"[{label}] Switched active CF domain");
 
         _stats.CfProxy();
-        try { await ws.SendAsync(relayInit, ct).ConfigureAwait(false); }
-        catch { ws.Abort(); throw; }
-        await RelayBridge.WebSocketAsync(client, ws, ctx, splitter, label, $"DC{dc}{(isMedia ? "m" : "")}",
-            _stats, _log, ct).ConfigureAwait(false);
+        long lease = TrackOutbound(AbortOf(ws));
+        try
+        {
+            try { await ws.SendAsync(relayInit, ct).ConfigureAwait(false); }
+            catch { ws.Abort(); throw; }
+            await RelayBridge.WebSocketAsync(client, ws, ctx, splitter, label, $"DC{dc}{(isMedia ? "m" : "")}",
+                _stats, _log, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            UntrackOutbound(lease);
+        }
         return true;
     }
 
@@ -602,7 +705,15 @@ public sealed class ProxyEngine : IAsyncDisposable
                 _tcpRetryAfter.Remove(key);
             }
             _stats.TcpFallback();
-            await RelayBridge.TcpAsync(client, remote, ctx, label, _stats, _log, ct).ConfigureAwait(false);
+            long lease = TrackOutbound(DisposeOf(remote));
+            try
+            {
+                await RelayBridge.TcpAsync(client, remote, ctx, label, _stats, _log, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                UntrackOutbound(lease);
+            }
             return true;
         }
         finally
@@ -861,6 +972,14 @@ public sealed class ProxyEngine : IAsyncDisposable
 
         try { if (_acceptLoop is not null) await _acceptLoop.ConfigureAwait(false); } catch (OperationCanceledException) { }
         try { if (_statsLoop is not null) await _statsLoop.ConfigureAwait(false); } catch (OperationCanceledException) { }
+
+        CancellationTokenSource[] networks;
+        lock (_networkGate)
+        {
+            networks = [.. _networkHistory, _network];
+            _networkHistory.Clear();
+        }
+        foreach (CancellationTokenSource network in networks) network.Dispose();
 
         _log.Info($"stopped; final stats: {_stats.Summary()}");
         _stop.Dispose();

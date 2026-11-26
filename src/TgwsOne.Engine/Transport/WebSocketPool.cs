@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using TgwsOne.Engine.Desync;
 using TgwsOne.Engine.Relay;
 
@@ -20,10 +19,13 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
+    private readonly TimeProvider _time;
+    private readonly Func<string, IReadOnlyList<string>, string, CancellationToken, Task<RawWebSocket?>>? _connector;
     private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<PoolKey, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
+    private double _lastClientAt;
     private volatile bool _tryFrontingFirst;
     private bool _disposed;
 
@@ -39,22 +41,43 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
     }
 
     public WebSocketPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress = null)
+        : this(config, log, stats, egress, timeProvider: null, connector: null)
+    {
+    }
+
+    internal WebSocketPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress,
+                           TimeProvider? timeProvider,
+                           Func<string, IReadOnlyList<string>, string, CancellationToken, Task<RawWebSocket?>>? connector)
     {
         _config = config;
         _log = log;
         _stats = stats;
         _egress = egress;
+        _time = timeProvider ?? TimeProvider.System;
+        _connector = connector;
+        _lastClientAt = Now();
     }
 
     /// <summary>Swaps the egress used by connections made from now on; already open sockets keep theirs.</summary>
     public void SetEgress(IEgress? egress) => _egress = egress;
 
-    private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+    private double Now() => _time.GetUtcNow().UtcDateTime.Ticks / (double)TimeSpan.TicksPerSecond;
+
+    private bool IdleExpiredLocked(double now)
+        => _config.PoolIdleSeconds > 0 && now - _lastClientAt >= _config.PoolIdleSeconds;
+
+    /// <summary>Idle entries in the pool; a test observes the drain with it.</summary>
+    internal int IdleCount
+    {
+        get { lock (_gate) return _buckets.Values.Sum(bucket => bucket.Idle.Count); }
+    }
 
     public async Task<RawWebSocket?> GetAsync(int dc, bool isMedia, bool isTestDc)
     {
         string? targetIp = _config.DcRedirects.GetValueOrDefault(dc);
         if (targetIp is null || _config.PoolSize <= 0) return null;
+
+        WakeUp();
 
         var key = new PoolKey(dc, isMedia, isTestDc);
         IReadOnlyList<string> domains = TelegramNetwork.WsDomains(dc, isMedia);
@@ -107,10 +130,72 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
     private bool IsStale(RawWebSocket socket, double created, double now)
         => now - created >= MaxAgeSeconds || !socket.IsHealthy;
 
+    /// <summary>
+    /// A client is back: anything left from before its absence is no longer warm, and a refill may start at once
+    /// instead of waiting out the backoff the last failed attempt left behind.
+    /// </summary>
+    private void WakeUp()
+    {
+        double now = Now();
+        List<RawWebSocket>? sleeping = null;
+        lock (_gate)
+        {
+            if (IdleExpiredLocked(now))
+            {
+                sleeping = TakeIdleLocked();
+                ResetBackoffLocked();
+            }
+            _lastClientAt = now;
+        }
+        CloseAll(sleeping);
+    }
+
+    /// <summary>Closes the free connections and stops the refill/rotation loop after a long absence.</summary>
+    internal bool CloseIfIdle()
+    {
+        double now = Now();
+        List<RawWebSocket>? sleeping;
+        lock (_gate)
+        {
+            if (!IdleExpiredLocked(now)) return false;
+            sleeping = TakeIdleLocked();
+            ResetBackoffLocked();
+        }
+        CloseAll(sleeping);
+        _log.Debug($"WS pool idle for {_config.PoolIdleSeconds}s; stopped warming {sleeping.Count} connection(s)");
+        return true;
+    }
+
+    private List<RawWebSocket> TakeIdleLocked()
+    {
+        List<RawWebSocket> sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
+        foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
+        return sockets;
+    }
+
+    private void ResetBackoffLocked()
+    {
+        foreach (Bucket bucket in _buckets.Values)
+        {
+            bucket.Failures = 0;
+            bucket.RetryAfter = 0;
+        }
+    }
+
+    private void CloseAll(List<RawWebSocket>? sockets)
+    {
+        if (sockets is null) return;
+        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+    }
+
     private void ScheduleRefill(PoolKey key, string targetIp, IReadOnlyList<string> domains)
     {
         if (_config.PoolSize <= 0) return;
         Bucket bucket = BucketFor(key);
+        lock (_gate)
+        {
+            if (IdleExpiredLocked(Now())) return;
+        }
         ScheduleRotation(key, targetIp, domains);
 
         lock (_gate)
@@ -143,16 +228,18 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
                 try { socket = await finished.ConfigureAwait(false); }
                 catch (Exception ex) { _log.Debug($"WS pool connect failed: {ex.Message}"); continue; }
                 if (socket is null) continue;
-                if (_stop.IsCancellationRequested)
-                {
-                    CloseQuietly(socket);
-                    continue;
-                }
+                double now = Now();
+                bool stored;
                 lock (_gate)
                 {
-                    bucket.Idle.Enqueue((socket, Now()));
-                    connected++;
+                    stored = !_stop.IsCancellationRequested && !IdleExpiredLocked(now);
+                    if (stored)
+                    {
+                        bucket.Idle.Enqueue((socket, now));
+                        connected++;
+                    }
                 }
+                if (!stored) CloseQuietly(socket);
             }
 
             lock (_gate)
@@ -200,6 +287,12 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
         {
             while (!_stop.IsCancellationRequested && _config.PoolSize > 0)
             {
+                if (CloseIfIdle())
+                {
+                    _log.Debug($"WS pool idle for {_config.PoolIdleSeconds}s; rotation stopped");
+                    return;
+                }
+
                 Bucket bucket = BucketFor(key);
                 double now = Now();
                 var expired = new List<RawWebSocket>();
@@ -254,6 +347,8 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
 
     private async Task<RawWebSocket?> ConnectOneAsync(string targetIp, IReadOnlyList<string> domains, string path)
     {
+        if (_connector is not null) return await _connector(targetIp, domains, path, _stop.Token).ConfigureAwait(false);
+
         // Fronting borrows the name of the masking site: the connection is dialed to the data centre's IP, while the
         // ClientHello says the site. Without that site there is nothing to borrow, so the plain route is the only one.
         string? frontSni = _config.FakeTlsDomain.Length > 0 ? _config.FakeTlsDomain : null;
@@ -313,13 +408,16 @@ public sealed class WebSocketPool : IAsyncDisposable, IIdleConnectionPool
     public void CloseIdle()
     {
         List<RawWebSocket> sockets;
-        lock (_gate)
-        {
-            sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
-            foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
-        }
-        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+        lock (_gate) sockets = TakeIdleLocked();
+        CloseAll(sockets);
         if (sockets.Count > 0) _log.Debug($"WS pool closed {sockets.Count} idle connection(s)");
+    }
+
+    /// <summary>The network underneath every connection changed: drop what is free and retry at once.</summary>
+    public void NetworkChanged()
+    {
+        CloseIdle();
+        lock (_gate) ResetBackoffLocked();
     }
 
     public async ValueTask DisposeAsync()
@@ -364,10 +462,13 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
     private readonly EngineConfig _config;
     private readonly EngineLog _log;
     private readonly EngineStats _stats;
+    private readonly TimeProvider _time;
+    private readonly Func<IReadOnlyList<string>, string, int, CancellationToken, Task<(RawWebSocket Socket, string WorkerDomain)?>>? _connector;
     private IEgress? _egress;
     private readonly object _gate = new();
     private readonly Dictionary<int, Bucket> _buckets = [];
     private readonly CancellationTokenSource _stop = new();
+    private double _lastClientAt;
     private bool _disposed;
 
     private sealed class Bucket
@@ -380,22 +481,43 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
     }
 
     public CfWorkerPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress = null)
+        : this(config, log, stats, egress, timeProvider: null, connector: null)
+    {
+    }
+
+    internal CfWorkerPool(EngineConfig config, EngineLog log, EngineStats stats, IEgress? egress,
+                          TimeProvider? timeProvider,
+                          Func<IReadOnlyList<string>, string, int, CancellationToken,
+                              Task<(RawWebSocket Socket, string WorkerDomain)?>>? connector)
     {
         _config = config;
         _log = log;
         _stats = stats;
         _egress = egress;
+        _time = timeProvider ?? TimeProvider.System;
+        _connector = connector;
+        _lastClientAt = Now();
     }
 
-    /// <summary>Swaps the egress used by connections made from now on; already open sockets keep theirs.</summary>
+    /// <summary>Swaps the egress used for connections made from now on; already open sockets keep theirs.</summary>
     public void SetEgress(IEgress? egress) => _egress = egress;
 
-    private static double Now() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+    private double Now() => _time.GetUtcNow().UtcDateTime.Ticks / (double)TimeSpan.TicksPerSecond;
+
+    private bool IdleExpiredLocked(double now)
+        => _config.PoolIdleSeconds > 0 && now - _lastClientAt >= _config.PoolIdleSeconds;
+
+    /// <summary>Idle entries in the pool; a test observes the drain with it.</summary>
+    internal int IdleCount
+    {
+        get { lock (_gate) return _buckets.Values.Sum(bucket => bucket.Idle.Count); }
+    }
 
     public async Task<(RawWebSocket Socket, string WorkerDomain)?> GetAsync(
         int dc, string fallbackDst, IReadOnlyList<string> workerDomains)
     {
         if (_config.PoolSize <= 0 || workerDomains.Count == 0) return null;
+        WakeUp();
         Bucket bucket = BucketFor(dc);
         double now = Now();
 
@@ -437,10 +559,68 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
         }
     }
 
+    private void WakeUp()
+    {
+        double now = Now();
+        List<RawWebSocket>? sleeping = null;
+        lock (_gate)
+        {
+            if (IdleExpiredLocked(now))
+            {
+                sleeping = TakeIdleLocked();
+                ResetBackoffLocked();
+            }
+            _lastClientAt = now;
+        }
+        CloseAll(sleeping);
+    }
+
+    /// <summary>Closes the free connections and stops the refill/rotation loop after a long absence.</summary>
+    internal bool CloseIfIdle()
+    {
+        double now = Now();
+        List<RawWebSocket> sleeping;
+        lock (_gate)
+        {
+            if (!IdleExpiredLocked(now)) return false;
+            sleeping = TakeIdleLocked();
+            ResetBackoffLocked();
+        }
+        CloseAll(sleeping);
+        _log.Debug($"CF worker pool idle for {_config.PoolIdleSeconds}s; stopped warming {sleeping.Count} connection(s)");
+        return true;
+    }
+
+    private List<RawWebSocket> TakeIdleLocked()
+    {
+        List<RawWebSocket> sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
+        foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
+        return sockets;
+    }
+
+    private void ResetBackoffLocked()
+    {
+        foreach (Bucket bucket in _buckets.Values)
+        {
+            bucket.Failures = 0;
+            bucket.RetryAfter = 0;
+        }
+    }
+
+    private void CloseAll(List<RawWebSocket>? sockets)
+    {
+        if (sockets is null) return;
+        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+    }
+
     private void ScheduleRefill(int dc, string fallbackDst, IReadOnlyList<string> workerDomains)
     {
         if (_config.PoolSize <= 0 || workerDomains.Count == 0) return;
         Bucket bucket = BucketFor(dc);
+        lock (_gate)
+        {
+            if (IdleExpiredLocked(Now())) return;
+        }
         ScheduleRotation(dc, fallbackDst, workerDomains);
         lock (_gate)
         {
@@ -463,6 +643,8 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
                 (RawWebSocket Socket, string WorkerDomain)? result =
                     await ConnectOneAsync(workerDomains, fallbackDst, dc).ConfigureAwait(false);
                 if (result is null) break;
+                double now = Now();
+                bool stored;
                 lock (_gate)
                 {
                     if (!_buckets.TryGetValue(dc, out Bucket? current) || current != bucket)
@@ -470,9 +652,14 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
                         CloseQuietly(result.Value.Socket);
                         return;
                     }
-                    bucket.Idle.Enqueue((result.Value.Socket, Now(), result.Value.WorkerDomain));
-                    connected++;
+                    stored = !_stop.IsCancellationRequested && !IdleExpiredLocked(now);
+                    if (stored)
+                    {
+                        bucket.Idle.Enqueue((result.Value.Socket, now, result.Value.WorkerDomain));
+                        connected++;
+                    }
                 }
+                if (!stored) CloseQuietly(result.Value.Socket);
             }
 
             lock (_gate)
@@ -515,6 +702,12 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
         {
             while (!_stop.IsCancellationRequested && _config.PoolSize > 0)
             {
+                if (CloseIfIdle())
+                {
+                    _log.Debug($"CF worker pool idle for {_config.PoolIdleSeconds}s; rotation stopped");
+                    return;
+                }
+
                 double now = Now();
                 var expired = new List<RawWebSocket>();
                 lock (_gate)
@@ -552,6 +745,9 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
     private async Task<(RawWebSocket Socket, string WorkerDomain)?> ConnectOneAsync(
         IReadOnlyList<string> workerDomains, string fallbackDst, int dc)
     {
+        if (_connector is not null)
+            return await _connector(workerDomains, fallbackDst, dc, _stop.Token).ConfigureAwait(false);
+
         string query = $"dst={Uri.EscapeDataString(fallbackDst)}&dc={dc}";
         string path = $"/apiws?{query}";
 
@@ -610,13 +806,16 @@ public sealed class CfWorkerPool : IAsyncDisposable, IIdleConnectionPool
     public void CloseIdle()
     {
         List<RawWebSocket> sockets;
-        lock (_gate)
-        {
-            sockets = [.. _buckets.Values.SelectMany(bucket => bucket.Idle.Select(entry => entry.Socket))];
-            foreach (Bucket bucket in _buckets.Values) bucket.Idle.Clear();
-        }
-        foreach (RawWebSocket socket in sockets) CloseQuietly(socket);
+        lock (_gate) sockets = TakeIdleLocked();
+        CloseAll(sockets);
         if (sockets.Count > 0) _log.Debug($"CF worker pool closed {sockets.Count} idle connection(s)");
+    }
+
+    /// <summary>The network underneath every connection changed: drop what is free and retry at once.</summary>
+    public void NetworkChanged()
+    {
+        CloseIdle();
+        lock (_gate) ResetBackoffLocked();
     }
 
     public async ValueTask DisposeAsync()

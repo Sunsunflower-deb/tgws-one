@@ -25,6 +25,14 @@ public sealed record EngineConfig
 
     public int BufferSize { get; init; } = 256 * 1024;
     public int PoolSize { get; init; } = 4;
+
+    /// <summary>
+    /// How long a pool may stay warm without a client. Zero (the desktop default) keeps the old behaviour: pools
+    /// never sleep. A positive value makes an idle pool close its free connections and stop refilling and pinging
+    /// them; the next client warms it up again. Android sets this so an idle proxy does not hold the radio awake.
+    /// </summary>
+    public int PoolIdleSeconds { get; init; }
+
     public bool FallbackCfProxy { get; init; } = true;
     public IReadOnlyList<string> CfproxyUserDomains { get; init; } = [];
     public IReadOnlyList<string> CfproxyWorkerDomains { get; init; } = [];
