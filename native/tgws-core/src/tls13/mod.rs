@@ -1,7 +1,6 @@
 //! Own TLS 1.3 client: handshake messages, key schedule and record primitives.
 //!
-//! This module is the first half of the TLS 1.3 client.  It provides the
-//! building blocks a handshake state machine (RT7b) will assemble:
+//! This module is the TLS 1.3 client.  It provides:
 //!
 //! * [`messages`] parses and builds the structural handshake messages
 //!   (RFC 8446, section 4) without performing any cryptographic verification.
@@ -11,21 +10,31 @@
 //!   nonce construction (RFC 8446, section 5.2).
 //! * [`kx`] provides X25519 key pairs and the Diffie-Hellman operation used by
 //!   the `key_share` extension.
+//! * [`record_protection`] frames and protects records with the sequence
+//!   counter and optional padding (RFC 8446, section 5.2).
+//! * [`handshake`] is the client state machine that ties the pieces together.
 //!
 //! The cryptography lives in audited RustCrypto crates.  "Own stack" here means
 //! that TgwsOne controls the handshake transcript, the wire bytes and the
 //! fingerprints instead of delegating to .NET `SslStream`; it does not mean
 //! re-implementing AES or X25519.
 //!
-//! Deliberately absent (RT7b/RT7c): the handshake state machine, certificate
-//! and signature verification, session resumption and 0-RTT.
+//! Deliberately absent (RT7c): certificate-chain and signature verification,
+//! session resumption and 0-RTT.
 
 use core::fmt;
 
 pub mod ciphers;
+pub mod handshake;
 pub mod keyschedule;
 pub mod kx;
 pub mod messages;
+pub mod record_protection;
+
+pub use handshake::{
+    CertVerifier, CertVerifyContext, ServerCertPolicy, SkipVerifier, Tls13Client, Tls13ClientConfig,
+};
+pub use record_protection::{RecordProtector, RecordUnprotector};
 
 /// Errors produced by the TLS 1.3 building blocks.
 ///
