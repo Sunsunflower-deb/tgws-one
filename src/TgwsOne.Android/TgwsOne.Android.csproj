@@ -12,6 +12,9 @@
     <!-- Android 8.0: the version the plan's default table fixes. -->
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <AndroidPackageFormats>apk</AndroidPackageFormats>
+    <!-- The plan's default table fixes the three ABIs. android-arm is the RID for armeabi-v7a; the plural property is what
+         makes one publish cover all of them instead of only the host default. -->
+    <RuntimeIdentifiers>android-arm64;android-arm;android-x64</RuntimeIdentifiers>
     <!-- The artifact of `make android` is installed with a plain `adb install`, so the assemblies must travel
          inside the APK. Debug builds otherwise use fast deployment, which leaves them on the build machine. -->
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>

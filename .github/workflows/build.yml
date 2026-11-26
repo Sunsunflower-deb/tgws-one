@@ -148,6 +148,61 @@ jobs:
           if-no-files-found: error
           path: dist/*.msi
 
+  android:
+    name: Android (APK)
+    # ubuntu-22.04, the same base as the linux job: the Android workload supports it and an APK carries its own runtime,
+    # so the runner's glibc does not matter. No newer image is needed for this workload.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The .NET Android workload builds with the JDK that JAVA_HOME points at; 17 is the version it supports.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android workload
+        run: dotnet workload install android
+
+      # One publish per ABI, so each APK stays small. RuntimeIdentifiers is pinned to that ABI; TargetFrameworks is pinned
+      # to net10.0-android because the shared, engine and mobile projects also build for net10.0, where the android-arm RID
+      # resolves to a linux-bionic-arm runtime pack that .NET 10 no longer ships. AndroidKeyStore=false is what makes the
+      # release build use the SDK debug key: the CI artifact needs no owner key.
+      - name: APKs
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' Directory.Build.props)
+          rm -rf out/publish/android dist/android
+          for rid in android-arm64 android-arm android-x64; do
+            case "$rid" in
+              android-arm64) abi=arm64-v8a ;;
+              android-arm) abi=armeabi-v7a ;;
+              android-x64) abi=x86_64 ;;
+            esac
+            dotnet publish src/TgwsOne.Android -c Release -f net10.0-android \
+              -r "$rid" -p:TargetFrameworks=net10.0-android -p:RuntimeIdentifiers="$rid" \
+              -p:AndroidKeyStore=false -o "out/publish/android/$rid"
+            mkdir -p dist/android
+            cp "out/publish/android/$rid/io.github.sunsunflowerdeb.tgwsone-Signed.apk" \
+              "dist/android/tgwsone-$version-android-$abi.apk"
+          done
+          (cd dist/android && sha256sum *.apk > SHA256SUMS)
+          cat dist/android/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          if-no-files-found: error
+          path: |
+            dist/android/*.apk
+            dist/android/SHA256SUMS
+
   release:
     name: Release
     needs: [linux, windows]

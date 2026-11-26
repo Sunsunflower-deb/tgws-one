@@ -47,6 +47,8 @@ build-win:
 	mkdir -p $(PUB)/win-x64/lists && cp lists/*.txt $(PUB)/win-x64/lists/
 
 # Debug APK for a phone: the bypass is inside the engine, so zapret2 (a desktop dependency) is not needed here.
+# One universal APK carries all three ABIs from the project's RuntimeIdentifiers (arm64-v8a, armeabi-v7a, x86_64),
+# so the same file installs on any phone.
 # The Android SDK and JDK come from ANDROID_HOME/ANDROID_SDK_ROOT and JAVA_HOME, as the platform build expects.
 android:
 	dotnet publish src/TgwsOne.Android -c Debug -f net10.0-android -o $(ANDROID_PUB)
