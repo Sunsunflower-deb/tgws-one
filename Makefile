@@ -87,19 +87,22 @@ define SANDBOXED_TEST
 	     rc=$$?; tools/leak-check.sh verify $$d/leak || rc=1; rm -rf $$d; exit $$rc; }
 endef
 
+# Desktop tests build the net10.0 target only: Shared and the engine are multi-target (net10.0;net10.0-android for
+# the Android shell), and building the android target here would require the Android workload on every machine that
+# only wants to run the desktop test suite.
 test:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.Mobile.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,-p:TargetFrameworks=net10.0,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,-p:TargetFrameworks=net10.0,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,-p:TargetFrameworks=net10.0,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Mobile.Tests,-p:TargetFrameworks=net10.0,)
 
 test-engine:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine" -p:TargetFrameworks=net10.0,TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
 
 # End-to-end against Telegram itself (WebSocket pool and the Cloudflare proxy route). Add TGWS_REAL_BLOCKED=1 to
 # also try the raw DC TCP fallback and TLS to the masked Cloudflare names, which many networks block on their own.
 test-network:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,--filter "FullyQualifiedName~RealTelegram",TGWS_REAL_NETWORK=1)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,--filter "FullyQualifiedName~RealTelegram" -p:TargetFrameworks=net10.0,TGWS_REAL_NETWORK=1)
 
 run:
 	$(APP_BIN) $(ARGS)
