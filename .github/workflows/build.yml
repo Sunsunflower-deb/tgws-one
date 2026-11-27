@@ -32,12 +32,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      # Shared/engine are multi-target (net10.0;net10.0-android for the Android shell): building them for the
-      # desktop resolves the Android workload packs, so this job installs the workload exactly like the local
-      # development environment does.
-      - name: Android workload
-        run: dotnet workload install android
-
       # The headless UI tests draw with Skia, which needs fontconfig.
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
@@ -86,13 +80,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      # Shared/engine are multi-target (net10.0;net10.0-android for the Android shell): restoring them for the
-      # desktop app resolves the Android workload packs (Mono runtime), so this job installs the workload exactly
-      # like the local development environment does.
-      - name: Android workload
-        shell: pwsh
-        run: dotnet workload install android
 
       - name: Version
         shell: pwsh
@@ -198,8 +185,10 @@ jobs:
               android-arm) abi=armeabi-v7a ;;
               android-x64) abi=x86_64 ;;
             esac
+            # TGWS_ENABLE_ANDROID=true turns on the opt-in android target in the referenced Shared/engine/mobile projects.
             dotnet publish src/TgwsOne.Android -c Release -f net10.0-android \
               -r "$rid" -p:TargetFrameworks=net10.0-android -p:RuntimeIdentifiers="$rid" \
+              -p:TGWS_ENABLE_ANDROID=true \
               -p:AndroidKeyStore=false -o "out/publish/android/$rid"
             mkdir -p dist/android
             cp "out/publish/android/$rid/io.github.sunsunflowerdeb.tgwsone-Signed.apk" \

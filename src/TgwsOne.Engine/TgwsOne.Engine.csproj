@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <!-- The android target is opt-in (TGWS_ENABLE_ANDROID=true): desktop restore/publish walks into it
+         otherwise and demands the Android workload plus Mono runtime packs that nuget.org does not carry. -->
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(TGWS_ENABLE_ANDROID)' == 'true'">net10.0;net10.0-android</TargetFrameworks>
     <RootNamespace>TgwsOne.Engine</RootNamespace>
     <AssemblyName>TgwsOne.Engine</AssemblyName>
     <!-- The proxy engine is a library: the application hosts it in its own process (and the engine command line

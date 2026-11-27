@@ -69,7 +69,8 @@ android:
 		mkdir -p $(ANDROID_JNILIBS)/$$abi; \
 		cp native/target/$$triple/release/libtgws_core.so $(ANDROID_JNILIBS)/$$abi/; \
 	done
-	dotnet publish src/TgwsOne.Android -c Debug -f net10.0-android -o $(ANDROID_PUB)
+	# TGWS_ENABLE_ANDROID=true is what turns the opt-in android target on in the referenced Shared/engine/mobile projects.
+	dotnet publish src/TgwsOne.Android -c Debug -f net10.0-android -p:TGWS_ENABLE_ANDROID=true -o $(ANDROID_PUB)
 
 # Tests never get a display or the session bus: the app opens its window when started without a switch, shows notifications
 # and a tray icon through the bus, and a test run must not be able to put any of it on the desktop of whoever runs it (the UI
@@ -88,18 +89,18 @@ define SANDBOXED_TEST
 endef
 
 test:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,-p:TargetFrameworks=net10.0,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,-p:TargetFrameworks=net10.0,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,-p:TargetFrameworks=net10.0,)
-	$(call SANDBOXED_TEST,tests/TgwsOne.Mobile.Tests,-p:TargetFrameworks=net10.0,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.App.Tests,,)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Mobile.Tests,,)
 
 test-engine:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine" -p:TargetFrameworks=net10.0,TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
+	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,--filter "FullyQualifiedName~RealEngine",TGWS_REAL_ENGINE=$(CURDIR)/$(APP_BIN))
 
 # End-to-end against Telegram itself (WebSocket pool and the Cloudflare proxy route). Add TGWS_REAL_BLOCKED=1 to
 # also try the raw DC TCP fallback and TLS to the masked Cloudflare names, which many networks block on their own.
 test-network:
-	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,--filter "FullyQualifiedName~RealTelegram" -p:TargetFrameworks=net10.0,TGWS_REAL_NETWORK=1)
+	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,--filter "FullyQualifiedName~RealTelegram",TGWS_REAL_NETWORK=1)
 
 run:
 	$(APP_BIN) $(ARGS)
