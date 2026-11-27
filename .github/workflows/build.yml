@@ -32,6 +32,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # Shared/engine are multi-target (net10.0;net10.0-android for the Android shell): building them for the
+      # desktop resolves the Android workload packs, so this job installs the workload exactly like the local
+      # development environment does.
+      - name: Android workload
+        run: dotnet workload install android
+
       # The headless UI tests draw with Skia, which needs fontconfig.
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
@@ -80,6 +86,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
+      # Shared/engine are multi-target (net10.0;net10.0-android for the Android shell): restoring them for the
+      # desktop app resolves the Android workload packs (Mono runtime), so this job installs the workload exactly
+      # like the local development environment does.
+      - name: Android workload
+        shell: pwsh
+        run: dotnet workload install android
 
       - name: Version
         shell: pwsh
