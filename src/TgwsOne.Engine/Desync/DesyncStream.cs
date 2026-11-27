@@ -152,6 +152,14 @@ public sealed class DesyncStream : Stream
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeToken);
             await InterceptFirstFlightAsync(buffer, linked.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested &&
+                                                  _lifetimeToken.IsCancellationRequested)
+        {
+            // Disposal canceled the in-flight plan. The connection is already gone, so the cancellation is the
+            // normal outcome here; surfacing it would leave a faulted task when the caller posted the write and
+            // does not wait for it (rule 2: the desync layer must not leave unhandled exceptions behind).
+            LogRateLimited("desync: the first flight was interrupted because the stream was disposed");
+        }
         finally
         {
             _writeGate.Release();

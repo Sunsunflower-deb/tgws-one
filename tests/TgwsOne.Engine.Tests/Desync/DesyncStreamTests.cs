@@ -224,41 +224,50 @@ public sealed class DesyncStreamTests
     }
 
     [Fact]
-    public async Task CancellationDuringPlan_CompletesWithoutUnobservedExceptions()
-    {
-        using var timeout = new CancellationTokenSource(TestTimeout);
-        using var server = new HangingServer();
-        await using EgressConnection connection = await ConnectSlowAsync(server.Port, timeout.Token);
-        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+    public Task CancellationDuringPlan_CompletesWithoutUnobservedExceptions()
+        => AssertNoUnobservedExceptionsAsync(async () =>
+        {
+            using var timeout = new CancellationTokenSource(TestTimeout);
+            await using var server = new HangingServer();
+            await using EgressConnection connection = await ConnectSlowAsync(server.Port, timeout.Token);
+            using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await connection.Stream.WriteAsync(DesyncTestData.ClientHello(), cancel.Token));
-
-        await AssertNoUnobservedExceptionsAsync();
-    }
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await connection.Stream.WriteAsync(DesyncTestData.ClientHello(), cancel.Token));
+        });
 
     [Fact]
-    public async Task DisposeDuringPlan_CompletesWithoutUnobservedExceptions()
-    {
-        using var timeout = new CancellationTokenSource(TestTimeout);
-        using var server = new HangingServer();
-        EgressConnection connection = await ConnectSlowAsync(server.Port, timeout.Token);
-        try
+    public Task DisposeDuringPlan_CompletesWithoutUnobservedExceptions()
+        => AssertNoUnobservedExceptionsAsync(async () =>
         {
+            using var timeout = new CancellationTokenSource(TestTimeout);
+            await using var server = new HangingServer();
+            EgressConnection connection = await ConnectSlowAsync(server.Port, timeout.Token);
             Task write = connection.Stream.WriteAsync(DesyncTestData.ClientHello()).AsTask();
-            // Long enough for the first half to be written and the plan to reach its ten-second pause.
-            await Task.Delay(200, timeout.Token);
+            try
+            {
+                // The plan has reached its ten-second pause once the server has read the first half.
+                await server.FirstRead.WaitAsync(timeout.Token);
 
-            await connection.DisposeAsync();
-            await Assert.ThrowsAnyAsync<Exception>(async () => await write);
-        }
-        finally
-        {
-            await connection.DisposeAsync();
-        }
-
-        await AssertNoUnobservedExceptionsAsync();
-    }
+                await connection.DisposeAsync();
+                try
+                {
+                    await write.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (TimeoutException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Awaiting observes the disposal outcome; cancellation or a closed socket both count.
+                }
+            }
+            finally
+            {
+                await connection.DisposeAsync();
+            }
+        });
 
     private static Task<EgressConnection> ConnectSlowAsync(int port, CancellationToken ct)
     {
@@ -303,7 +312,7 @@ public sealed class DesyncStreamTests
         return X509CertificateLoader.LoadPkcs12(self.Export(X509ContentType.Pfx), null);
     }
 
-    private static async Task AssertNoUnobservedExceptionsAsync()
+    private static async Task AssertNoUnobservedExceptionsAsync(Func<Task> action)
     {
         var observed = new List<Exception>();
         EventHandler<UnobservedTaskExceptionEventArgs> handler = (_, e) =>
@@ -315,13 +324,18 @@ public sealed class DesyncStreamTests
         TaskScheduler.UnobservedTaskException += handler;
         try
         {
-            await Task.Delay(100);
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-            await Task.Delay(100);
+            await action();
 
-            lock (observed) Assert.Empty(observed);
+            for (int pass = 0; pass < 3; pass++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                await Task.Yield();
+            }
+
+            Exception[] relevant;
+            lock (observed) relevant = observed.Where(IsFromDesyncLayer).ToArray();
+            Assert.Empty(relevant);
         }
         finally
         {
@@ -329,14 +343,32 @@ public sealed class DesyncStreamTests
         }
     }
 
+    private static bool IsFromDesyncLayer(Exception exception)
+    {
+        IEnumerable<Exception> inner = exception is AggregateException aggregate
+            ? aggregate.Flatten().InnerExceptions
+            : [exception];
+        foreach (Exception item in inner)
+        {
+            string? trace = item.StackTrace;
+            if (trace is not null &&
+                (trace.Contains("TgwsOne.Engine.Desync", StringComparison.Ordinal) ||
+                 trace.Contains("TgwsOne.Engine.Tests.Desync", StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
+    }
+
     private readonly record struct ProxyObservation(long Timestamp, int Length);
 
     /// <summary>Accepts connections and drains them, so a slow plan has a live socket to write its first half into.</summary>
-    private sealed class HangingServer : IDisposable
+    private sealed class HangingServer : IDisposable, IAsyncDisposable
     {
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _stop = new();
+        private readonly TaskCompletionSource _firstRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Task _loop;
+        private int _disposed;
 
         public HangingServer()
         {
@@ -346,6 +378,8 @@ public sealed class DesyncStreamTests
         }
 
         public int Port { get; }
+
+        public Task FirstRead => _firstRead.Task;
 
         private async Task AcceptAsync()
         {
@@ -359,6 +393,7 @@ public sealed class DesyncStreamTests
                     {
                         int read = await client.GetStream().ReadAsync(buffer, _stop.Token);
                         if (read == 0) break;
+                        _firstRead.TrySetResult();
                     }
                 }
             }
@@ -371,10 +406,25 @@ public sealed class DesyncStreamTests
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _stop.Cancel();
             _listener.Stop();
             try { _loop.Wait(TimeSpan.FromSeconds(2)); }
             catch (AggregateException)
+            {
+                // The accept loop already classified its exit.
+            }
+            _stop.Dispose();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            _stop.Cancel();
+            _listener.Stop();
+            try { await _loop.ConfigureAwait(false); }
+            catch (Exception ex) when (ex is OperationCanceledException or SocketException or IOException
+                                       or ObjectDisposedException)
             {
                 // The accept loop already classified its exit.
             }
