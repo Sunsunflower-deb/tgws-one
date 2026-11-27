@@ -34,17 +34,14 @@ zapret2:
 # The zapret2 bundle and the target lists sit next to the executable: <publish>/zapret2/ and <publish>/lists/.
 build:
 	@[ -f out/zapret2/$(RID_LINUX)/nfqws2 ] || { echo "сначала выполните make zapret2" >&2; exit 1; }
-	# Desktop publish pins TargetFrameworks to net10.0: the referenced Shared/engine projects are multi-target
-	# (net10.0;net10.0-android for the Android shell), and without the pin the desktop build would require the
-	# Android workload on machines that only ship the desktop app.
-	dotnet publish src/TgwsOne -c Release -r $(RID_LINUX) --self-contained -p:PublishSingleFile=true -p:TargetFrameworks=net10.0 -o $(PUB)/$(RID_LINUX)
+	dotnet publish src/TgwsOne -c Release -r $(RID_LINUX) --self-contained -p:PublishSingleFile=true -o $(PUB)/$(RID_LINUX)
 	rm -rf $(PUB)/$(RID_LINUX)/zapret2 $(PUB)/$(RID_LINUX)/lists
 	cp -a out/zapret2/$(RID_LINUX) $(PUB)/$(RID_LINUX)/zapret2
 	mkdir -p $(PUB)/$(RID_LINUX)/lists && cp lists/*.txt $(PUB)/$(RID_LINUX)/lists/
 
 build-win:
 	@[ -f out/zapret2/win-x64/winws2.exe ] || { echo "сначала выполните make zapret2" >&2; exit 1; }
-	dotnet publish src/TgwsOne -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:TargetFrameworks=net10.0 -o $(PUB)/win-x64
+	dotnet publish src/TgwsOne -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o $(PUB)/win-x64
 	rm -rf $(PUB)/win-x64/zapret2 $(PUB)/win-x64/lists
 	cp -a out/zapret2/win-x64 $(PUB)/win-x64/zapret2
 	mkdir -p $(PUB)/win-x64/lists && cp lists/*.txt $(PUB)/win-x64/lists/
@@ -90,9 +87,6 @@ define SANDBOXED_TEST
 	     rc=$$?; tools/leak-check.sh verify $$d/leak || rc=1; rm -rf $$d; exit $$rc; }
 endef
 
-# Desktop tests build the net10.0 target only: Shared and the engine are multi-target (net10.0;net10.0-android for
-# the Android shell), and building the android target here would require the Android workload on every machine that
-# only wants to run the desktop test suite.
 test:
 	$(call SANDBOXED_TEST,tests/TgwsOne.Core.Tests,-p:TargetFrameworks=net10.0,)
 	$(call SANDBOXED_TEST,tests/TgwsOne.Engine.Tests,-p:TargetFrameworks=net10.0,)
