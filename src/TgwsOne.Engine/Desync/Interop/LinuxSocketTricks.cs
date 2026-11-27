@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace TgwsOne.Engine.Desync;
@@ -45,6 +46,14 @@ internal sealed class LinuxSocketTricks : ISocketTricks
 
     /// <summary>The errno of the last failed syscall, or 0 after a success. Read by the caller for the log.</summary>
     internal int LastError { get; private set; }
+
+    // A gifted page is not released when splice returns: with MSG_SPLICE_PAGES the skb keeps the user page in its
+    // fragment list, and on loopback the receiver's queue can hold the very same page until the application reads it.
+    // Freeing the buffer at the end of TrySendSpliced therefore returns the pages to the allocator while the kernel
+    // still reads them, so the next allocation (even the next payload of the same test) overwrites the bytes in
+    // flight. The bag keeps every gifted buffer reachable for as long as the Socket object is; its finalizer frees the
+    // pages after the connection is gone, which is the same lifetime FakeSpliceSender gives its retransmission pages.
+    private static readonly ConditionalWeakTable<Socket, GiftedPageBag> GiftedPagesBySocket = new();
 
     public int GetSystemTtl(Socket socket)
     {
@@ -114,9 +123,11 @@ internal sealed class LinuxSocketTricks : ISocketTricks
                 return false;
             }
 
+            PageAlignedBuffer? buffer = null;
+            bool gifted = false;
             try
             {
-                using var buffer = new PageAlignedBuffer(bytes.Length);
+                buffer = new PageAlignedBuffer(bytes.Length);
                 buffer.Write(bytes);
 
                 int offset = 0;
@@ -133,6 +144,10 @@ internal sealed class LinuxSocketTricks : ISocketTricks
                         LastError = Marshal.GetLastWin32Error();
                         return false;
                     }
+
+                    // The pages now belong to the kernel. A later splice failure must not return them to the
+                    // allocator either: the part already queued is still referenced by the socket.
+                    gifted = true;
 
                     int remaining = (int)queued;
                     while (remaining > 0)
@@ -155,6 +170,12 @@ internal sealed class LinuxSocketTricks : ISocketTricks
             }
             finally
             {
+                if (buffer is not null)
+                {
+                    if (gifted) RetainGiftedPages(socket, buffer);
+                    else buffer.Dispose();
+                }
+
                 Close(pipe[0]);
                 Close(pipe[1]);
             }
@@ -162,6 +183,33 @@ internal sealed class LinuxSocketTricks : ISocketTricks
         finally
         {
             if (added) socket.SafeHandle.DangerousRelease();
+        }
+    }
+
+    private static void RetainGiftedPages(Socket socket, PageAlignedBuffer buffer)
+        => GiftedPagesBySocket.GetValue(socket, static _ => new GiftedPageBag()).Add(buffer);
+
+    /// <summary>Owns the gifted pages of one socket and frees them after the connection object is collected.</summary>
+    private sealed class GiftedPageBag
+    {
+        private readonly List<PageAlignedBuffer> _buffers = [];
+        private readonly object _gate = new();
+
+        public void Add(PageAlignedBuffer buffer)
+        {
+            lock (_gate) _buffers.Add(buffer);
+        }
+
+        ~GiftedPageBag()
+        {
+            PageAlignedBuffer[] buffers;
+            lock (_gate)
+            {
+                buffers = [.. _buffers];
+                _buffers.Clear();
+            }
+
+            foreach (PageAlignedBuffer buffer in buffers) buffer.Dispose();
         }
     }
 

@@ -31,7 +31,8 @@ public interface ISocketTricks
 
     /// <summary>
     /// Sends <paramref name="bytes"/> through a kernel pipe (vmsplice with GIFT, then splice to the socket). Returns
-    /// false and sends nothing on a syscall error.
+    /// false and sends nothing on a syscall error. A successful implementation keeps the gifted pages out of the
+    /// allocator until the connection is gone: splice can leave them referenced by skb fragments after it returns.
     /// </summary>
     bool TrySendSpliced(Socket socket, ReadOnlySpan<byte> bytes);
 

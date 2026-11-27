@@ -184,11 +184,25 @@ public sealed class SocketTricksTests
         using (client)
         using (server)
         {
-            byte[] payload = new byte[100];
-            for (int i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 7 + 1);
+            // Several distinct payloads before the receiver reads: every gift is still referenced by the socket
+            // (or by the loopback receive queue) when the next call runs, so a buffer returned to the allocator
+            // earlier would be reused and the later fragments would arrive as unrelated heap bytes.
+            const int rounds = 8;
+            const int payloadLength = 100;
+            byte[] expected = new byte[rounds * payloadLength];
+            for (int round = 0; round < rounds; round++)
+            {
+                byte[] payload = new byte[payloadLength];
+                for (int i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 7 + round * 13 + 1);
+                payload.CopyTo(expected, round * payloadLength);
 
-            Assert.True(tricks.TrySendSpliced(client, payload));
-            Assert.Equal(payload, ReadExactly(server, payload.Length));
+                Assert.True(tricks.TrySendSpliced(client, payload));
+            }
+
+            // Shutdown is the explicit end-of-send barrier: the FIN is ordered after every spliced byte, so the
+            // receiver knows the stream is complete without any sleep or allocator-timing guess.
+            client.Shutdown(SocketShutdown.Send);
+            Assert.Equal(expected, ReadExactly(server, expected.Length));
         }
     }
 

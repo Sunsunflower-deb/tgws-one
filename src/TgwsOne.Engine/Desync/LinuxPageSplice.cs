@@ -5,9 +5,9 @@ namespace TgwsOne.Engine.Desync;
 
 /// <summary>
 /// Sends a caller-owned page-aligned buffer through <c>vmsplice(SPLICE_F_GIFT)</c> + <c>splice</c>. The generic
-/// <see cref="ISocketTricks.TrySendSpliced"/> owns and frees its internal buffer when the call returns, so the kernel
-/// could not keep reading the pages the fake path later overwrites with the real bytes. Fake needs the gift to refer
-/// to the exact pages <see cref="FakeSpliceSender"/> retains until the connection closes.
+/// <see cref="ISocketTricks.TrySendSpliced"/> retains its gifted pages for the socket's lifetime, but it cannot let
+/// the fake path overwrite them with the real bytes: a retransmission has to read from the same pages. Fake therefore
+/// uses this overload with a buffer that <see cref="FakeSpliceSender"/> owns and keeps until the connection closes.
 /// </summary>
 internal static class LinuxPageSplice
 {
