@@ -5,7 +5,7 @@
 #   cd dist && makepkg -f
 # Not installed anywhere by the build, and the service is never enabled by the package: see tgwsone-bin.install.
 pkgname=tgwsone-bin
-pkgver=2.2.0
+pkgver=2.3.0
 pkgrel=1
 pkgdesc='Local Telegram proxy with DPI bypass (zapret2): desktop app, bypass service and command line'
 arch=(x86_64)
