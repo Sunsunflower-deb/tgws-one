@@ -119,7 +119,10 @@ jobs:
       - name: Application
         shell: pwsh
         run: |
-          dotnet publish src/TgwsOne -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o out/publish/win-x64
+          # TargetFrameworks is pinned to net10.0: the referenced Shared/engine projects are multi-target
+          # (net10.0;net10.0-android for the Android shell), and without the pin the desktop publish would
+          # require the Android workload on a machine that only ships the desktop app.
+          dotnet publish src/TgwsOne -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:TargetFrameworks=net10.0 -o out/publish/win-x64
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
           Copy-Item out/zapret2/win-x64 out/publish/win-x64/zapret2 -Recurse
           New-Item -ItemType Directory -Force out/publish/win-x64/lists | Out-Null
