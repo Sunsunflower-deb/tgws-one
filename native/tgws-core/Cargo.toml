@@ -41,8 +41,10 @@ rustls-pki-types = { version = "1", features = ["std"] }
 # trust store to Rust without extra JNI plumbing, so pinning the Mozilla set is
 # the honest default for both Android and desktop.
 webpki-roots = "1"
+# JSON configuration and status/log payloads of the C ABI (RT10a).  The ABI
+# exchanges JSON strings instead of packed C structs.
+serde_json = "1"
 
 [dev-dependencies]
 libc = "0.2"
-serde_json = "1"
 hex = "0.4"

@@ -96,7 +96,7 @@ impl EngineStats {
 }
 
 /// Immutable snapshot of [`EngineStats`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EngineStatsSnapshot {
     /// Accepted TCP connections.
     pub connections_opened: u64,
@@ -120,31 +120,62 @@ pub struct EngineStatsSnapshot {
     pub bytes_down: u64,
 }
 
+/// Severity of a relay event line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogSeverity {
+    /// Protocol or lifecycle detail.
+    Debug,
+    /// Connection and lifecycle news.
+    Info,
+    /// Something recoverable went wrong.
+    Warn,
+}
+
+/// A destination for relay event lines in addition to stderr.
+///
+/// The FFI layer implements this to fan lines out into a ring buffer and the
+/// host's callback.  Implementations must be thread-safe because engine worker
+/// threads log concurrently.
+pub trait LogSink: Send + Sync {
+    /// Receives one already-formatted event line.
+    fn log(&self, severity: LogSeverity, message: &str);
+}
+
 /// Event log with the C# engine's line-per-event shape.
 pub struct EngineLog {
     level: LogLevel,
+    sink: Option<Arc<dyn LogSink>>,
 }
 
 impl EngineLog {
-    fn new(level: LogLevel) -> Self {
-        Self { level }
+    fn with_sink(level: LogLevel, sink: Option<Arc<dyn LogSink>>) -> Self {
+        Self { level, sink }
+    }
+
+    fn emit(&self, severity: LogSeverity, message: &str) {
+        if let Some(sink) = &self.sink {
+            sink.log(severity, message);
+        }
     }
 
     pub(crate) fn info(&self, message: &str) {
         if matches!(self.level, LogLevel::Normal | LogLevel::Verbose) {
             eprintln!("[relay] {message}");
+            self.emit(LogSeverity::Info, message);
         }
     }
 
     pub(crate) fn warn(&self, message: &str) {
         if !matches!(self.level, LogLevel::Silent) {
             eprintln!("[relay] warn: {message}");
+            self.emit(LogSeverity::Warn, message);
         }
     }
 
     pub(crate) fn debug(&self, message: &str) {
         if matches!(self.level, LogLevel::Verbose) {
             eprintln!("[relay] debug: {message}");
+            self.emit(LogSeverity::Debug, message);
         }
     }
 }
@@ -172,12 +203,25 @@ impl Engine {
     ///
     /// Returns the bind error when the address is taken or invalid.
     pub fn start(config: RelayConfig) -> io::Result<Self> {
+        Self::start_with_sink(config, None)
+    }
+
+    /// Binds the listener, starts the accept thread and forwards every event
+    /// line to `sink` after the verbosity filter.
+    ///
+    /// # Errors
+    ///
+    /// Returns the bind error when the address is taken or invalid.
+    pub fn start_with_sink(
+        config: RelayConfig,
+        sink: Option<Arc<dyn LogSink>>,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind((config.host.as_str(), config.port))?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
         let pool = build_pool(&config);
         let inner = Arc::new(Inner {
-            log: EngineLog::new(config.log_level),
+            log: EngineLog::with_sink(config.log_level, sink),
             config,
             stats: EngineStats::default(),
             pool,

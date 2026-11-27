@@ -17,7 +17,7 @@
 | `tgws-core/src/tls/client_hello.rs` | Сборка правдоподобного TLS 1.3 ClientHello с отпечатком Chrome 120, `build_padded`, собственный RNG. |
 | `tgws-core/src/tls/record.rs` | Каркас TLS-записей: типы контента, `encode_record`, перефрагментация `split_record`. Без шифрования. |
 | `tgws-core/src/tcp/mod.rs` | Свой блокирующий TCP поверх `libc`: IPv4/IPv6, `TCP_NODELAY`, TTL/hop limit, `MSG_OOB`. |
-| `tgws-core/src/ffi/mod.rs` | Заготовка C ABI (`tgws_core_version`), крейт собирается как `lib`+`cdylib`. |
+| `tgws-core/src/ffi/mod.rs` | C ABI движка (RT10a): `EngineHandle`, JSON-конфиг/статус/логи, callback журнала, `tgws_core_version`. Документ — `docs/rust-ffi.md`. |
 
 ## Что уже есть
 

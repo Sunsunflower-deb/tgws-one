@@ -24,7 +24,7 @@ use crate::tls::client_hello::Random32;
 
 pub use client_handshake::{ClientConnection, ClientHandshake, HandshakeError};
 pub use config::{LogLevel, RelayConfig};
-pub use engine::{Engine, EngineStats, EngineStatsSnapshot};
+pub use engine::{Engine, EngineStats, EngineStatsSnapshot, LogSeverity, LogSink};
 pub use pool::{ManualTimeProvider, PoolKey, SystemTimeProvider, TimeProvider, WsPool};
 pub use routes::{Route, WsConnection};
 pub use session::{SessionOutcome, SessionRoute};

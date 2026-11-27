@@ -12,7 +12,7 @@
 | `TgwsOne` | `net10.0-windows…` | Core | Десктоп-приложение |
 | `TgwsOne.Mobile` | `net10.0;net10.0-android` | Shared, Engine | Логика мобильного приложения без Android-API (хост, хранение); представления добавят E4.x/E5.2 |
 | `TgwsOne.Android` | `net10.0-android` | Mobile, Engine, Shared | Тонкий клей: `MainActivity`, `MainApplication`, `ProxyService` (foreground, `specialUse`), `EngineRuntime`, манифест |
-| `native/tgws-core` | Rust 2024, зависимость `libc` | — | Ядро на Rust со своим TCP/TLS стеком (ниже) |
+| `native/tgws-core` | Rust 2024, зависимости `libc`, `serde_json` | — | Ядро на Rust со своим TCP/TLS стеком (ниже) |
 
 Принцип деления: вся логика живёт в сборках, тестируемых на десктопе (`TgwsOne.Mobile.Tests`, headless, как `TgwsOne.App.Tests`); `TgwsOne.Android` — только клей: один экземпляр движка на процесс (`EngineRuntime`), foreground service владеет его жизненным циклом. В `TgwsOne.slnx` Android-проект не входит, APK собирается отдельно (`make android`). zapret2 — десктопная зависимость и в APK не попадает: обход на Android делает собственный слой движка (`Desync/`).
 
@@ -25,7 +25,7 @@
 - `tls/record.rs` — каркас TLS-записей: `encode_record`, перефрагментация `split_record`. Без шифрования.
 - `tcp/mod.rs` — блокирующий TCP поверх libc: IPv4/IPv6, `TCP_NODELAY`, TTL/hop limit, `MSG_OOB`.
 - `strategy/`, `net/` — чистые юниты (без сокетов и файловых записей), перенесённые из `TgwsOne.Core.Zapret` через rust-anything: record эталона C#, diff вывода Rust, gate против расхождений.
-- `ffi/` — заготовка C ABI (`tgws_core_version`); крейт собирается `lib`+`cdylib`.
+- `ffi/` — C ABI движка (RT10a): `tgws_engine_start/stop/free`, JSON-статус/логи, ссылка `tg://`, callback журнала; крейт собирается `lib`+`cdylib`, контракт — `docs/rust-ffi.md`. C#-биндинг появится в RT10b.
 
 ## Слой обхода (`TgwsOne.Engine/Desync`)
 
