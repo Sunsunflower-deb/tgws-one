@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 
 use super::client_handshake::{self, HandshakeError};
 use super::config::{LogLevel, RelayConfig};
+use super::pool::{Connector, PoolKey, SystemTimeProvider, WsPool};
+use super::routes::{self, WsConnection};
 use super::session;
 
 const ACCEPT_RETRY: Duration = Duration::from_millis(5);
@@ -151,6 +153,7 @@ struct Inner {
     config: RelayConfig,
     stats: EngineStats,
     log: EngineLog,
+    pool: Option<Arc<WsPool<WsConnection>>>,
     stopping: AtomicBool,
     active: AtomicUsize,
 }
@@ -172,10 +175,12 @@ impl Engine {
         let listener = TcpListener::bind((config.host.as_str(), config.port))?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
+        let pool = build_pool(&config);
         let inner = Arc::new(Inner {
             log: EngineLog::new(config.log_level),
             config,
             stats: EngineStats::default(),
+            pool,
             stopping: AtomicBool::new(false),
             active: AtomicUsize::new(0),
         });
@@ -249,6 +254,22 @@ impl Drop for Engine {
     }
 }
 
+fn build_pool(config: &RelayConfig) -> Option<Arc<WsPool<WsConnection>>> {
+    if config.pool_size <= 0 {
+        return None;
+    }
+    let pool_config = config.clone();
+    let connector: Arc<Connector<WsConnection>> =
+        Arc::new(move |key: &PoolKey| routes::connect_warm(&pool_config, key));
+    let size = usize::try_from(config.pool_size).unwrap_or(0);
+    Some(Arc::new(WsPool::new(
+        size,
+        Duration::from_secs(config.pool_idle_seconds),
+        connector,
+        Arc::new(SystemTimeProvider),
+    )))
+}
+
 fn accept_loop(listener: TcpListener, inner: Arc<Inner>) {
     while !inner.stopping.load(Ordering::Relaxed) {
         match listener.accept() {
@@ -306,6 +327,7 @@ fn handle_client(stream: TcpStream, peer: SocketAddr, inner: &Inner) {
                 &inner.stats,
                 &inner.log,
                 &inner.stopping,
+                inner.pool.as_deref(),
             );
             inner.log.debug(&format!(
                 "[{label}] session finished: route={:?} up={} down={}",
@@ -512,6 +534,7 @@ mod tests {
         config.dc_redirects.insert(2, "127.0.0.1".to_string());
         config.ws_port = upstream_port;
         config.ws_secure = false;
+        config.pool_size = 1;
 
         let mut engine = Engine::start(config).unwrap();
         // The test helper above used a placeholder; use the real counters here.

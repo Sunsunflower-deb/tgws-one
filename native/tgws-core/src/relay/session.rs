@@ -2,35 +2,33 @@
 //!
 //! This is the port of `RelayBridge.WebSocketAsync` and `TcpAsync`: client
 //! ciphertext is decrypted with the client key, re-encrypted with the relay
-//! key and sent on; replies travel back the other way.  A successful WebSocket
-//! connect is used directly, a failed one falls back to one direct-TCP attempt,
-//! matching `ProxyEngine.FallbackAsync`.
+//! key and sent on; replies travel back the other way.  [`super::routes`] picks
+//! the outbound route, so a failed `ws` attempt moves on to `ws-fronted`,
+//! `cf-worker`, `cf-proxy` and finally direct TCP, matching
+//! `ProxyEngine.FallbackAsync`.
 //!
 //! The C# versions run the two directions as two async tasks.  This crate is
-//! synchronous, and the existing `WebSocket` client is not `Send`, so the two
-//! directions share one poll loop with a short socket read timeout (20 ms).
-//! That is the documented behavioural difference: latency instead of
-//! zero-copy wakeups, but the same bytes, re-encryption order and close rules.
+//! synchronous, so the two directions share one poll loop with a short socket
+//! read timeout (20 ms).  That is the documented behavioural difference:
+//! latency instead of zero-copy wakeups, but the same bytes, re-encryption
+//! order and close rules.
 
 use std::io::{self, Read, Write};
-use std::mem::size_of;
-use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use crate::mtproto::MsgSplitter;
 use crate::proto::{CryptoContext, Obfuscated2};
-use crate::tcp::RawTcpStream;
 use crate::tls::client_hello::Random32;
-use crate::tls13::{ServerCertPolicy, Tls13Client, Tls13ClientConfig};
-use crate::ws::WsError;
-use crate::ws::client::{HandshakeConfig, Message, WebSocket};
+use crate::ws::client::Message;
 
 use super::OsRandom;
 use super::client_handshake::{ClientConnection, ClientHandshake};
 use super::config::{POLL_INTERVAL, RelayConfig};
 use super::engine::{EngineLog, EngineStats};
+use super::pool::WsPool;
+use super::routes::{self, Connected, RouteContext, Upstream, WsConnection};
 
 const READ_SIZE: usize = 64 * 1024;
 
@@ -64,6 +62,7 @@ pub fn run(
     stats: &EngineStats,
     log: &EngineLog,
     stopping: &AtomicBool,
+    pool: Option<&WsPool<WsConnection>>,
 ) -> SessionOutcome {
     let mut rng = match OsRandom::new() {
         Ok(rng) => rng,
@@ -97,15 +96,22 @@ pub fn run(
         }
     };
 
-    let target = if config.pool_size > 0 {
-        config.dc_redirects.get(&handshake.dc).cloned()
-    } else {
-        None
+    let plan = routes::plan(config, handshake);
+    let route_context = RouteContext {
+        config,
+        handshake,
+        pool,
     };
+    let mut last_error = String::new();
 
-    if let Some(target) = target {
-        match connect_websocket(config, &target, handshake) {
-            Ok(mut socket) => {
+    for route in plan {
+        let started = Instant::now();
+        match routes::connect(route, &route_context) {
+            Ok(Connected {
+                upstream: Upstream::Ws(mut socket),
+                route: actual,
+            }) => {
+                log.info(&routes::egress_line(actual, "ok", started.elapsed()));
                 if let Err(error) = socket.send_binary(&relay_init) {
                     log.warn(&format!("relay: WS init send failed: {error}"));
                     stats.error();
@@ -117,110 +123,54 @@ pub fn run(
                 }
                 stats.ws_session();
                 log.info(&format!(
-                    "DC{}{} -> WS {}",
+                    "DC{}{} -> WS [{}]",
                     handshake.dc,
                     if handshake.is_media { " media" } else { "" },
-                    target
+                    actual.as_str()
                 ));
                 return relay_websocket(client, socket, context, handshake, stats, log, stopping);
             }
+            Ok(Connected {
+                upstream: Upstream::Tcp(remote),
+                route: actual,
+            }) => {
+                log.info(&routes::egress_line(actual, "ok", started.elapsed()));
+                return relay_tcp(
+                    client, remote, relay_init, context, handshake, stats, log, stopping,
+                );
+            }
             Err(error) => {
+                log.info(&routes::egress_line(route, "error", started.elapsed()));
                 log.warn(&format!(
-                    "DC{}{} WS unavailable ({error}) -> fallback",
+                    "DC{}{} route {} failed: {error}",
                     handshake.dc,
-                    if handshake.is_media { " media" } else { "" }
+                    if handshake.is_media { " media" } else { "" },
+                    route.as_str()
                 ));
-            }
-        }
-    } else {
-        log.info(&format!(
-            "DC{}{} has no WS route -> fallback",
-            handshake.dc,
-            if handshake.is_media { " media" } else { "" }
-        ));
-    }
-
-    match config.fallback_host(handshake.dc, handshake.is_test_dc) {
-        Some(destination) => relay_tcp_fallback(
-            client,
-            &destination,
-            relay_init,
-            context,
-            handshake,
-            config,
-            stats,
-            log,
-            stopping,
-        ),
-        None => {
-            log.warn(&format!("DC{} no fallback available", handshake.dc));
-            SessionOutcome {
-                route: SessionRoute::None,
-                up_bytes: 0,
-                down_bytes: 0,
+                last_error = error;
             }
         }
     }
-}
 
-fn connect_websocket(
-    config: &RelayConfig,
-    target: &str,
-    handshake: &ClientHandshake,
-) -> Result<WebSocket<UpstreamStream>, String> {
-    let path = config.ws_path_for(handshake.is_test_dc);
-    let timeout_ms = u64::try_from(config.read_timeout.as_millis()).unwrap_or(u64::MAX);
-
-    let mut last_error = String::new();
-    for domain in config.ws_domains(handshake.dc, handshake.is_media) {
-        let timeout = Arc::new(AtomicU64::new(timeout_ms));
-        let control = Arc::clone(&timeout);
-        let stream = if config.ws_secure {
-            let raw =
-                RawTcpStream::connect(target, config.ws_port).map_err(|error| error.to_string())?;
-            let rng = OsRandom::new().map_err(|error| error.to_string())?;
-            let tls = TlsClientStream::connect(raw, &domain, config.read_timeout, Box::new(rng))
-                .map_err(|error| error.to_string())?;
-            UpstreamStream::Tls {
-                stream: Box::new(tls),
-                timeout,
-                applied_ms: timeout_ms,
-            }
+    log.warn(&format!(
+        "DC{} no route available{}",
+        handshake.dc,
+        if last_error.is_empty() {
+            String::new()
         } else {
-            let stream =
-                TcpStream::connect((target, config.ws_port)).map_err(|error| error.to_string())?;
-            stream
-                .set_nodelay(true)
-                .map_err(|error| error.to_string())?;
-            stream
-                .set_read_timeout(Some(config.read_timeout))
-                .map_err(|error| error.to_string())?;
-            UpstreamStream::Plain {
-                stream,
-                timeout,
-                applied_ms: timeout_ms,
-            }
-        };
-
-        let handshake_config = HandshakeConfig::new(domain.clone())
-            .with_path(path)
-            .with_subprotocol("binary");
-        let rng = OsRandom::new().map_err(|error| error.to_string())?;
-        match WebSocket::connect(stream, &handshake_config, Box::new(rng)) {
-            Ok(socket) => {
-                let poll = u64::try_from(POLL_INTERVAL.as_millis()).unwrap_or(20);
-                control.store(poll, Ordering::Relaxed);
-                return Ok(socket);
-            }
-            Err(error) => last_error = format!("{domain}: {error}"),
+            format!(": {last_error}")
         }
+    ));
+    SessionOutcome {
+        route: SessionRoute::None,
+        up_bytes: 0,
+        down_bytes: 0,
     }
-    Err(last_error)
 }
 
 fn relay_websocket(
     client: &mut ClientConnection,
-    mut socket: WebSocket<UpstreamStream>,
+    mut socket: WsConnection,
     mut context: CryptoContext,
     handshake: &ClientHandshake,
     stats: &EngineStats,
@@ -279,7 +229,7 @@ fn relay_websocket(
                     }
                 }
             }
-            Err(error) if is_timeout(&error) => {}
+            Err(error) if routes::is_timeout(&error) => {}
             Err(error) => {
                 log.debug(&format!("relay: client read ended: {error}"));
                 break;
@@ -308,7 +258,7 @@ fn relay_websocket(
                 log.debug("relay: upstream closed the WebSocket");
                 break;
             }
-            Err(error) if ws_timeout(&error) => {}
+            Err(error) if routes::ws_timeout(&error) => {}
             Err(error) => {
                 stats.error();
                 log.warn(&format!("relay: WS receive failed: {error}"));
@@ -321,7 +271,7 @@ fn relay_websocket(
 }
 
 fn finish_websocket(
-    socket: &mut WebSocket<UpstreamStream>,
+    socket: &mut WsConnection,
     up_bytes: u64,
     down_bytes: u64,
     reason: &str,
@@ -354,39 +304,23 @@ fn write_downstream(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn relay_tcp_fallback(
+fn relay_tcp(
     client: &mut ClientConnection,
-    destination: &str,
+    mut remote: TcpStream,
     relay_init: Vec<u8>,
     mut context: CryptoContext,
     handshake: &ClientHandshake,
-    config: &RelayConfig,
     stats: &EngineStats,
     log: &EngineLog,
     stopping: &AtomicBool,
 ) -> SessionOutcome {
-    let mut remote =
-        match connect_with_timeout(destination, config.tcp_fallback_port, config.read_timeout) {
-            Ok(remote) => remote,
-            Err(error) => {
-                stats.error();
-                log.warn(&format!(
-                    "DC{} TCP fallback to {destination}:{} failed: {error}",
-                    handshake.dc, config.tcp_fallback_port
-                ));
-                return SessionOutcome {
-                    route: SessionRoute::None,
-                    up_bytes: 0,
-                    down_bytes: 0,
-                };
-            }
-        };
-
+    let peer = remote
+        .peer_addr()
+        .map_or_else(|_| "?".to_string(), |address| address.to_string());
     log.info(&format!(
-        "DC{}{} TCP fallback to {destination}:{}",
+        "DC{}{} TCP fallback to {peer}",
         handshake.dc,
-        if handshake.is_media { " media" } else { "" },
-        config.tcp_fallback_port
+        if handshake.is_media { " media" } else { "" }
     ));
 
     if let Err(error) = remote.write_all(&relay_init) {
@@ -430,7 +364,7 @@ fn relay_tcp_fallback(
                     break;
                 }
             }
-            Err(error) if is_timeout(&error) => {}
+            Err(error) if routes::is_timeout(&error) => {}
             Err(error) => {
                 log.debug(&format!("relay: client read ended: {error}"));
                 break;
@@ -450,7 +384,7 @@ fn relay_tcp_fallback(
                     break;
                 }
             }
-            Err(error) if is_timeout(&error) => {}
+            Err(error) if routes::is_timeout(&error) => {}
             Err(error) => {
                 log.debug(&format!("relay: DC read ended: {error}"));
                 break;
@@ -470,29 +404,6 @@ fn relay_tcp_fallback(
     }
 }
 
-fn connect_with_timeout(host: &str, port: u16, timeout: Duration) -> io::Result<TcpStream> {
-    let mut last_error = None;
-    for address in (host, port).to_socket_addrs()? {
-        match TcpStream::connect_timeout(&address, timeout) {
-            Ok(stream) => return Ok(stream),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error
-        .unwrap_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "host did not resolve")))
-}
-
-fn is_timeout(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
-    )
-}
-
-fn ws_timeout(error: &WsError) -> bool {
-    matches!(error, WsError::Io(io) if is_timeout(io))
-}
-
 fn human_bytes(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes}B")
@@ -500,217 +411,6 @@ fn human_bytes(bytes: u64) -> String {
         format!("{:.1}KB", bytes as f64 / 1024.0)
     } else {
         format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
-
-/// A blocking stream under the WebSocket client with a settable read timeout.
-enum UpstreamStream {
-    Plain {
-        stream: TcpStream,
-        timeout: Arc<AtomicU64>,
-        applied_ms: u64,
-    },
-    Tls {
-        stream: Box<TlsClientStream>,
-        timeout: Arc<AtomicU64>,
-        applied_ms: u64,
-    },
-}
-
-impl UpstreamStream {
-    fn apply_timeout(&mut self) -> io::Result<()> {
-        let millis = self.timeout();
-        let applied = match self {
-            Self::Plain { applied_ms, .. } | Self::Tls { applied_ms, .. } => *applied_ms,
-        };
-        if millis == applied {
-            return Ok(());
-        }
-        let duration = if millis == 0 {
-            None
-        } else {
-            Some(Duration::from_millis(millis))
-        };
-        match self {
-            Self::Plain {
-                stream, applied_ms, ..
-            } => {
-                stream.set_read_timeout(duration)?;
-                *applied_ms = millis;
-            }
-            Self::Tls {
-                stream, applied_ms, ..
-            } => {
-                stream.set_read_timeout(duration)?;
-                *applied_ms = millis;
-            }
-        }
-        Ok(())
-    }
-
-    fn timeout(&self) -> u64 {
-        match self {
-            Self::Plain { timeout, .. } | Self::Tls { timeout, .. } => {
-                timeout.load(Ordering::Relaxed)
-            }
-        }
-    }
-}
-
-impl Read for UpstreamStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.apply_timeout()?;
-        match self {
-            Self::Plain { stream, .. } => stream.read(buf),
-            Self::Tls { stream, .. } => stream.read(buf),
-        }
-    }
-}
-
-impl Write for UpstreamStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            Self::Plain { stream, .. } => stream.write(buf),
-            Self::Tls { stream, .. } => stream.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            Self::Plain { stream, .. } => stream.flush(),
-            Self::Tls { stream, .. } => stream.flush(),
-        }
-    }
-}
-
-/// TLS 1.3 record stream over [`RawTcpStream`].
-struct TlsClientStream {
-    raw: RawTcpStream,
-    client: Tls13Client,
-    pending: Vec<u8>,
-}
-
-impl TlsClientStream {
-    fn connect(
-        mut raw: RawTcpStream,
-        server_name: &str,
-        timeout: Duration,
-        rng: Box<dyn Random32>,
-    ) -> io::Result<Self> {
-        set_recv_timeout(raw.as_raw_fd(), Some(timeout))?;
-        let config = Tls13ClientConfig::new(server_name, rng)
-            .with_alpn(&[b"http/1.1"])
-            .with_cert_policy(ServerCertPolicy::Skip);
-        let mut client = Tls13Client::new(config);
-        let flight = client.start().map_err(tls_error)?;
-        raw.write_all(&flight)?;
-
-        let mut buffer = [0u8; 16 * 1024];
-        while !client.is_connected() {
-            let read = raw.read(&mut buffer)?;
-            if read == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "TLS handshake ended early",
-                ));
-            }
-            let outgoing = client.advance(&buffer[..read]).map_err(tls_error)?;
-            if !outgoing.is_empty() {
-                raw.write_all(&outgoing)?;
-                raw.flush()?;
-            }
-        }
-
-        Ok(Self {
-            raw,
-            client,
-            pending: Vec::new(),
-        })
-    }
-
-    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
-        set_recv_timeout(self.raw.as_raw_fd(), timeout)
-    }
-}
-
-impl Read for TlsClientStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if !self.pending.is_empty() {
-            let count = buf.len().min(self.pending.len());
-            buf[..count].copy_from_slice(&self.pending[..count]);
-            self.pending.drain(..count);
-            return Ok(count);
-        }
-
-        let mut raw_buffer = [0u8; 16 * 1024];
-        loop {
-            let data = self.client.take_application_data();
-            if !data.is_empty() {
-                let count = buf.len().min(data.len());
-                buf[..count].copy_from_slice(&data[..count]);
-                if data.len() > count {
-                    self.pending.extend_from_slice(&data[count..]);
-                }
-                return Ok(count);
-            }
-            let read = self.raw.read(&mut raw_buffer)?;
-            if read == 0 {
-                return Ok(0);
-            }
-            let outgoing = self
-                .client
-                .advance(&raw_buffer[..read])
-                .map_err(tls_error)?;
-            if !outgoing.is_empty() {
-                self.raw.write_all(&outgoing)?;
-                self.raw.flush()?;
-            }
-        }
-    }
-}
-
-impl Write for TlsClientStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let records = self.client.send_application_data(buf).map_err(tls_error)?;
-        self.raw.write_all(&records)?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.raw.flush()
-    }
-}
-
-fn tls_error(error: crate::tls13::TlsError) -> io::Error {
-    io::Error::other(format!("TLS: {error}"))
-}
-
-fn set_recv_timeout(fd: i32, timeout: Option<Duration>) -> io::Result<()> {
-    let value = timeout.map_or(
-        libc::timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        |duration| libc::timeval {
-            tv_sec: duration.as_secs() as libc::time_t,
-            tv_usec: duration.subsec_micros() as libc::suseconds_t,
-        },
-    );
-    // SAFETY: `fd` is an open socket owned by the caller and `value` is a live
-    // `timeval` for the duration of the call.
-    let result = unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_RCVTIMEO,
-            (&value as *const libc::timeval).cast(),
-            size_of::<libc::timeval>() as libc::socklen_t,
-        )
-    };
-    if result < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
     }
 }
 

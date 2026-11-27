@@ -106,7 +106,10 @@ pub enum ExtensionKind {
 ///
 /// Implementations only need to provide [`Random32::next_u32`]; the default
 /// [`Random32::fill_bytes`] expands words into arbitrary byte slices.
-pub trait Random32 {
+///
+/// The `Send` bound lets a pooled WebSocket own its generator while the pool
+/// hands the socket between client threads.
+pub trait Random32: Send {
     /// Returns the next 32-bit word.
     fn next_u32(&mut self) -> u32;
 

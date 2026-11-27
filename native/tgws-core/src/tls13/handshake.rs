@@ -82,7 +82,10 @@ pub struct CertVerifyContext<'a> {
 /// The default implementation is
 /// [`crate::tls13::cert_verifier::WebPkiVerifier`].  [`SkipVerifier`] is kept
 /// for tests and for the explicit [`ServerCertPolicy::Skip`] escape hatch.
-pub trait CertVerifier {
+///
+/// `Send` is required because a pooled WebSocket owns its TLS client and the
+/// pool may move that socket between client threads.
+pub trait CertVerifier: Send {
     /// Checks one server certificate chain and its `CertificateVerify`
     /// signature.
     ///

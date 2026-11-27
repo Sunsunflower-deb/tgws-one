@@ -4,9 +4,8 @@
 //! or from `[proxy]` plus the Android `[android] poolidle`.  This module maps
 //! both sources onto the same [`RelayConfig`] the sync relay runs with.
 //!
-//! RT9a deliberately keeps only what the core needs.  The Cloudflare proxy and
-//! worker routes are stored as plain values so RT9b can use them, but nothing
-//! in this crate dials them yet.
+//! The Cloudflare worker and proxy routes are plain configuration values, as
+//! in `EngineConfig`: the routing itself lives in [`super::routes`].
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -68,10 +67,12 @@ pub struct RelayConfig {
     pub ws_port: u16,
     /// Whether the WebSocket route is wrapped in TLS 1.3.
     pub ws_secure: bool,
-    /// First user CF-proxy domain, kept for RT9b.
-    pub cf_proxy_domain: Option<String>,
-    /// First CF-worker URL, kept for RT9b.
+    /// User CF-proxy base domains, in the configured order.
+    pub cf_proxy_domains: Vec<String>,
+    /// First CF-worker URL (`scheme://host[:port]/apiws`), if configured.
     pub worker_url: Option<String>,
+    /// `--no-cfproxy` / `[proxy] cfproxy`: whether the CF-proxy route is allowed.
+    pub fallback_cf_proxy: bool,
     /// `[android] poolidle`: how long an idle pool may stay warm.
     pub pool_idle_seconds: u64,
     /// `[proxy] poolsize`; zero disables the WebSocket route, as in C#.
@@ -105,8 +106,9 @@ impl Default for RelayConfig {
             ws_path_test: WS_PATH_TEST.to_string(),
             ws_port: DEFAULT_WS_PORT,
             ws_secure: true,
-            cf_proxy_domain: None,
+            cf_proxy_domains: Vec::new(),
             worker_url: None,
+            fallback_cf_proxy: true,
             pool_idle_seconds: DEFAULT_POOL_IDLE_SECONDS,
             pool_size: 4,
             tcp_fallback_port: DEFAULT_TCP_FALLBACK_PORT,
@@ -146,7 +148,7 @@ impl RelayConfig {
             ws_path_test: WS_PATH_TEST.to_string(),
             ws_port: DEFAULT_WS_PORT,
             ws_secure: !config.disable_secure,
-            cf_proxy_domain: config.cfproxy_user_domains.first().cloned(),
+            cf_proxy_domains: config.cfproxy_user_domains.clone(),
             worker_url: config.cfproxy_worker_domains.first().map(|domain| {
                 let scheme = if config.disable_secure {
                     "http"
@@ -155,6 +157,7 @@ impl RelayConfig {
                 };
                 format!("{scheme}://{domain}{WS_PATH}")
             }),
+            fallback_cf_proxy: config.fallback_cf_proxy,
             pool_idle_seconds,
             pool_size: config.pool_size,
             tcp_fallback_port: DEFAULT_TCP_FALLBACK_PORT,
@@ -196,11 +199,12 @@ impl RelayConfig {
             ws_path_test: WS_PATH_TEST.to_string(),
             ws_port: DEFAULT_WS_PORT,
             ws_secure: !settings.no_secure,
-            cf_proxy_domain: settings.cf_domains.first().cloned(),
+            cf_proxy_domains: settings.cf_domains.clone(),
             worker_url: settings.worker_domains.first().map(|domain| {
                 let scheme = if settings.no_secure { "http" } else { "https" };
                 format!("{scheme}://{domain}{WS_PATH}")
             }),
+            fallback_cf_proxy: settings.cf_proxy,
             pool_idle_seconds,
             pool_size: settings.pool_size.max(0),
             tcp_fallback_port: DEFAULT_TCP_FALLBACK_PORT,
@@ -365,11 +369,12 @@ mod tests {
         assert_eq!(config.secret.len(), 16);
         assert_eq!(config.dc_redirects[&2], "149.154.167.220");
         assert_eq!(config.fake_tls_domain, "www.example.com");
-        assert_eq!(config.cf_proxy_domain.as_deref(), Some("proxy.example"));
+        assert_eq!(config.cf_proxy_domains, ["proxy.example"]);
         assert_eq!(
             config.worker_url.as_deref(),
             Some("https://worker.example/apiws")
         );
+        assert!(config.fallback_cf_proxy);
         assert_eq!(config.pool_idle_seconds, 60);
         assert_eq!(config.pool_size, 3);
         assert_eq!(config.buffer_size, 64 * 1024);

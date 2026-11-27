@@ -1,8 +1,10 @@
-//! The synchronous MTProto-over-WebSocket relay core (RT9a).
+//! The synchronous MTProto-over-WebSocket relay core.
 //!
-//! The module structure follows the C# `TgwsOne.Engine.Relay` namespace:
-//! [`config`] mirrors `EngineConfig`, [`client_handshake`] is the top of
-//! `ProxyEngine.HandleClientAsync`, [`session`] is `RelayBridge`, and
+//! The module structure follows the C# `TgwsOne.Engine.Relay` and
+//! `TgwsOne.Engine.Transport` namespaces: [`config`] mirrors `EngineConfig`,
+//! [`client_handshake`] is the top of `ProxyEngine.HandleClientAsync`,
+//! [`routes`] is the `ws`/`ws-fronted`/`cf-worker`/`cf-proxy`/TCP order,
+//! [`pool`] is the warm `WebSocketPool`, [`session`] is `RelayBridge`, and
 //! [`engine`] is the accept loop plus `EngineStats`.
 //!
 //! Everything runs on blocking sockets and `std::thread`; there is no async
@@ -11,6 +13,8 @@
 pub mod client_handshake;
 pub mod config;
 pub mod engine;
+pub mod pool;
+pub mod routes;
 pub mod session;
 
 use std::fs::File;
@@ -21,6 +25,8 @@ use crate::tls::client_hello::Random32;
 pub use client_handshake::{ClientConnection, ClientHandshake, HandshakeError};
 pub use config::{LogLevel, RelayConfig};
 pub use engine::{Engine, EngineStats, EngineStatsSnapshot};
+pub use pool::{ManualTimeProvider, PoolKey, SystemTimeProvider, TimeProvider, WsPool};
+pub use routes::{Route, WsConnection};
 pub use session::{SessionOutcome, SessionRoute};
 
 /// A `/dev/urandom`-backed [`Random32`], used where the C# engine uses
