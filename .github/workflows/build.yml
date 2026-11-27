@@ -95,13 +95,12 @@ jobs:
       # unpatched Windows 10): "Your Windows doesn't fully support CET", exit code 0x80131506. The runner image is current, so
       # it starts here; build.ps1 runs wix as `dotnet wix.dll` by itself if it ever does not. `wix extension add` below has no
       # such fallback: on an image that hit this, call it as `dotnet <tool store>\wix.dll extension add ...` instead.
+      # The tool install runs from the parent directory: global.json in the repo pins the SDK for everything under
+      # the workspace, and under that pin `dotnet tool install` crashes on windows-latest (TransactionalAction
+      # type-init). The install is --global anyway, so the working directory does not affect the result.
       - name: WiX
         shell: pwsh
-        env:
-          # WiX 5 is built for older .NET runtimes and needs to roll forward on a .NET-10-only machine. The env is
-          # scoped to this step: globally it would clash with the global.json SDK pin and crash the CLI's
-          # TransactionalAction initializer (observed as a type-init exception in `dotnet tool install`).
-          DOTNET_ROLL_FORWARD: LatestMajor
+        working-directory: ${{ github.workspace }}/../
         run: |
           dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { throw "wix install failed" }
