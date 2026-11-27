@@ -57,14 +57,14 @@ public sealed class MainActivity : AvaloniaMainActivity
         var clipboard = new AndroidClipboard(this);
         var share = new AndroidShare(this);
         var probes = new MobileEgressProbes(storage, desync,
-            (timeout, ct) => EngineRuntime.SelfCheckAsync(timeout, ct));
+            (timeout, ct) => RustEngineHost.SelfCheckAsync(timeout, ct));
 
         var actions = new ShellDiagnosticsActions(proxy, desync, settings, launcher);
-        var home = new HomeViewModel(proxy, settings, () => EngineRuntime.ActiveConnections);
+        var home = new HomeViewModel(proxy, settings, () => RustEngineHost.ActiveConnections);
         var bypass = new BypassViewModel(desync, settings);
         var finder = new FinderViewModel(new DesyncFinder(desync, probes));
         var diagnostics = new DiagnosticsViewModel(
-            new Diagnostics(proxy, desync, probes, () => true, () => EngineRuntime.ActiveConnections), actions);
+            new Diagnostics(proxy, desync, probes, () => true, () => RustEngineHost.ActiveConnections), actions);
         var logs = new LogsViewModel(LogsViewModel.DefaultTabs(storage), new SystemTicker(), clipboard, launcher);
         var settingsPage = new SettingsViewModel(settings);
         var connect = new ConnectViewModel(settings, launcher, clipboard, share);
@@ -107,31 +107,31 @@ public sealed class MainActivity : AvaloniaMainActivity
 
         public async Task<EngineStartResult> StartAsync(CancellationToken ct = default)
         {
-            if (EngineRuntime.IsRunning)
-                return new EngineStartResult(EngineStartOutcome.AlreadyRunning, EngineRuntime.Port);
+            if (RustEngineHost.IsRunning)
+                return new EngineStartResult(EngineStartOutcome.AlreadyRunning, RustEngineHost.Port);
 
             ProxyService.Start(activity);
             DateTime deadline = DateTime.UtcNow + StartTimeout;
             while (DateTime.UtcNow < deadline)
             {
-                if (EngineRuntime.IsRunning)
-                    return new EngineStartResult(EngineStartOutcome.Started, EngineRuntime.Port);
-                if (EngineRuntime.Error is { Length: > 0 } error)
-                    return new EngineStartResult(EngineStartOutcome.EngineExited, EngineRuntime.Port, Output: error);
+                if (RustEngineHost.IsRunning)
+                    return new EngineStartResult(EngineStartOutcome.Started, RustEngineHost.Port);
+                if (RustEngineHost.Error is { Length: > 0 } error)
+                    return new EngineStartResult(EngineStartOutcome.EngineExited, RustEngineHost.Port, Output: error);
                 await Task.Delay(50, ct);
             }
-            return new EngineStartResult(EngineStartOutcome.Timeout, EngineRuntime.Port);
+            return new EngineStartResult(EngineStartOutcome.Timeout, RustEngineHost.Port);
         }
 
         public async Task<EngineStopOutcome> StopAsync(CancellationToken ct = default)
         {
-            if (!EngineRuntime.IsRunning) return EngineStopOutcome.NotRunning;
+            if (!RustEngineHost.IsRunning) return EngineStopOutcome.NotRunning;
 
             ProxyService.Stop(activity);
             DateTime deadline = DateTime.UtcNow + StopTimeout;
             while (DateTime.UtcNow < deadline)
             {
-                if (!EngineRuntime.IsRunning) return EngineStopOutcome.Stopped;
+                if (!RustEngineHost.IsRunning) return EngineStopOutcome.Stopped;
                 await Task.Delay(50, ct);
             }
             return EngineStopOutcome.Stopped;
@@ -139,8 +139,8 @@ public sealed class MainActivity : AvaloniaMainActivity
 
         public EngineProxyStatus GetStatus()
         {
-            bool running = EngineRuntime.IsRunning;
-            int port = EngineRuntime.Port;
+            bool running = RustEngineHost.IsRunning;
+            int port = RustEngineHost.Port;
             return new EngineProxyStatus(running, running && port > 0, port, PortBusyByOther: false,
                                          Pid: running ? System.Environment.ProcessId : null);
         }
@@ -152,15 +152,15 @@ public sealed class MainActivity : AvaloniaMainActivity
     private sealed class RuntimeDesyncControl(MobileStorage storage) : IDesyncControl
     {
         public IReadOnlyList<DesyncStrategy> Rotation
-            => EngineRuntime.Desync?.Rotation
+            => RustEngineHost.Desync?.Rotation
                ?? DesyncRotations.ForOperator(AndroidSettingsStore.Load(IniFile.Load(storage.IniPath)).Provider);
 
         public IReadOnlyList<AutoHost> AutoHosts
-            => EngineRuntime.Desync is { IsAuto: true } live ? live.AutoHosts : [];
+            => RustEngineHost.Desync is { IsAuto: true } live ? live.AutoHosts : [];
 
         public Task<FinderBaseline> CaptureAsync(CancellationToken ct = default)
         {
-            if (EngineRuntime.Desync is { } live)
+            if (RustEngineHost.Desync is { } live)
             {
                 string id = live.Selected?.Id ?? DesyncFinder.AutoId;
                 return Task.FromResult(new FinderBaseline(id, id != DesyncFinder.NoBypassId));
@@ -174,7 +174,7 @@ public sealed class MainActivity : AvaloniaMainActivity
         {
             try
             {
-                DesyncController? controller = EngineRuntime.Desync;
+                DesyncController? controller = RustEngineHost.Desync;
                 if (controller is null) return Task.FromResult<string?>("движок прокси не запущен");
 
                 if (candidateId == DesyncFinder.NoBypassId)
@@ -211,12 +211,12 @@ public sealed class MainActivity : AvaloniaMainActivity
             {
                 if (!baseline.Enabled)
                 {
-                    EngineRuntime.Desync = null;
+                    RustEngineHost.Desync = null;
                     return Task.FromResult<string?>(null);
                 }
 
-                DesyncController controller = EngineRuntime.Desync ?? new DesyncController();
-                EngineRuntime.Desync = controller;
+                DesyncController controller = RustEngineHost.Desync ?? new DesyncController();
+                RustEngineHost.Desync = controller;
                 if (baseline.Strategy == DesyncFinder.AutoId || BuiltInDesync.Find(baseline.Strategy) is not { } strategy)
                     controller.UseAuto();
                 else
@@ -231,7 +231,7 @@ public sealed class MainActivity : AvaloniaMainActivity
             }
         }
 
-        public DesyncStrategy? Resolve(string sni, string route) => EngineRuntime.Desync?.Resolve(sni, route);
+        public DesyncStrategy? Resolve(string sni, string route) => RustEngineHost.Desync?.Resolve(sni, route);
     }
 
     private sealed class ShellDiagnosticsActions(ServiceProxyControl proxy, RuntimeDesyncControl desync,

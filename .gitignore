@@ -17,3 +17,6 @@ TgwsOne.ini
 # приватный ключ подписи — только локально
 *.pfx
 signing/PASSWORD.txt
+
+# нативные библиотеки Rust-ядра, собранные make android (не коммитим)
+src/TgwsOne.Android/jniLibs/

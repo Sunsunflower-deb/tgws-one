@@ -41,7 +41,7 @@ public sealed class ProxyService : Service
         base.OnCreate();
         CreateChannel();
         RegisterNetworkCallback();
-        EngineRuntime.Changed += OnRuntimeChanged;
+        RustEngineHost.Changed += OnRuntimeChanged;
     }
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
@@ -50,7 +50,7 @@ public sealed class ProxyService : Service
         {
             Task.Run(async () =>
             {
-                await EngineRuntime.StopAsync();
+                await RustEngineHost.StopAsync();
                 StopForeground(StopForegroundFlags.Remove);
                 StopSelf();
             });
@@ -68,7 +68,7 @@ public sealed class ProxyService : Service
         {
             try
             {
-                await EngineRuntime.StartAsync(FilesDir!.AbsolutePath, CurrentOperatorMccMnc());
+                await RustEngineHost.StartAsync(FilesDir!.AbsolutePath, CurrentOperatorMccMnc());
                 UpdateNotification();
             }
             catch (Exception ex)
@@ -87,10 +87,10 @@ public sealed class ProxyService : Service
     public override void OnDestroy()
     {
         UnregisterNetworkCallback();
-        EngineRuntime.Changed -= OnRuntimeChanged;
+        RustEngineHost.Changed -= OnRuntimeChanged;
         try
         {
-            EngineRuntime.StopBlocking();
+            RustEngineHost.StopBlocking();
         }
         catch (Exception ex)
         {
@@ -150,7 +150,7 @@ public sealed class ProxyService : Service
             changed = _currentNetwork is null || !_currentNetwork.Equals(network);
             _currentNetwork = network;
         }
-        if (changed) EngineRuntime.OnNetworkChanged(CurrentOperatorMccMnc(network));
+        if (changed) RustEngineHost.OnNetworkChanged(CurrentOperatorMccMnc(network));
     }
 
     private void OnDefaultNetworkLost(Network network)
@@ -161,7 +161,7 @@ public sealed class ProxyService : Service
             changed = _currentNetwork is not null && _currentNetwork.Equals(network);
             if (changed) _currentNetwork = null;
         }
-        if (changed) EngineRuntime.OnNetworkChanged(null);
+        if (changed) RustEngineHost.OnNetworkChanged(null);
     }
 
     private sealed class DefaultNetworkCallback(ProxyService owner) : ConnectivityManager.NetworkCallback
@@ -180,9 +180,9 @@ public sealed class ProxyService : Service
     private void UpdateNotification(string? text = null)
     {
         string state = text
-            ?? (EngineRuntime.IsRunning
-                ? "Работает: " + EngineRuntime.Link
-                : EngineRuntime.Error is { Length: > 0 } error ? "Ошибка: " + error : "Остановлен");
+            ?? (RustEngineHost.IsRunning
+                ? "Работает: " + RustEngineHost.Link
+                : RustEngineHost.Error is { Length: > 0 } error ? "Ошибка: " + error : "Остановлен");
         ((NotificationManager)GetSystemService(NotificationService)!).Notify(NotificationId, BuildNotification(state));
     }
 

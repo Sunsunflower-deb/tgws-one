@@ -50,7 +50,25 @@ build-win:
 # One universal APK carries all three ABIs from the project's RuntimeIdentifiers (arm64-v8a, armeabi-v7a, x86_64),
 # so the same file installs on any phone.
 # The Android SDK and JDK come from ANDROID_HOME/ANDROID_SDK_ROOT and JAVA_HOME, as the platform build expects.
+#
+# The relay listener is libtgws_core.so (RT10b): cargo-ndk builds it for the three ABIs and the copy lands in
+# jniLibs/, which the .NET Android target packs into the APK. cargo-ndk names its output after the Rust triple, so
+# the loop maps triple → Android ABI. ANDROID_NDK_HOME defaults to the CI/SDK location used by the build machine.
+ANDROID_NDK_HOME ?= $(HOME)/android-ndk-r28b
+ANDROID_NDK_BIN  := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
+ANDROID_JNILIBS  := src/TgwsOne.Android/jniLibs
+# Android ABI → Rust target triple (cargo-ndk's output folder under native/target/).
+ANDROID_ABIS := arm64-v8a:aarch64-linux-android armeabi-v7a:armv7-linux-androideabi x86_64:x86_64-linux-android
+
 android:
+	cd native && PATH="$(HOME)/.cargo/bin:$(ANDROID_NDK_BIN):$$PATH" ANDROID_NDK_HOME="$(ANDROID_NDK_HOME)" \
+		cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -- build --release
+	rm -rf $(ANDROID_JNILIBS)
+	@set -e; for pair in $(ANDROID_ABIS); do \
+		abi=$${pair%%:*}; triple=$${pair#*:}; \
+		mkdir -p $(ANDROID_JNILIBS)/$$abi; \
+		cp native/target/$$triple/release/libtgws_core.so $(ANDROID_JNILIBS)/$$abi/; \
+	done
 	dotnet publish src/TgwsOne.Android -c Debug -f net10.0-android -o $(ANDROID_PUB)
 
 # Tests never get a display or the session bus: the app opens its window when started without a switch, shows notifications
