@@ -71,9 +71,6 @@ jobs:
     name: Windows (MSI)
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      # WiX 5 is built for older .NET runtimes; with only .NET 10 on the machine it has to be allowed to roll forward.
-      DOTNET_ROLL_FORWARD: LatestMajor
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +97,11 @@ jobs:
       # such fallback: on an image that hit this, call it as `dotnet <tool store>\wix.dll extension add ...` instead.
       - name: WiX
         shell: pwsh
+        env:
+          # WiX 5 is built for older .NET runtimes and needs to roll forward on a .NET-10-only machine. The env is
+          # scoped to this step: globally it would clash with the global.json SDK pin and crash the CLI's
+          # TransactionalAction initializer (observed as a type-init exception in `dotnet tool install`).
+          DOTNET_ROLL_FORWARD: LatestMajor
         run: |
           dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { throw "wix install failed" }
